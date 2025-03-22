@@ -3,11 +3,10 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { useWallet } from "./wallet-context"
 import { ethers } from "ethers"
-import BountySystemABI from "@/contracts/BountySystem.json"
+import abi from "@/abi/CommunityBountyBoard.json"
 
 // Contract address would be set after deployment
-const CONTRACT_ADDRESS = "0x123456789abcdef123456789abcdef123456789a" // Replace with actual contract address
-
+import {communityAddress} from "@/config"
 interface BountyContextType {
   contract: ethers.Contract | null
   bounties: any[]
@@ -55,7 +54,7 @@ export function BountyProvider({ children }: { children: ReactNode }) {
   // Initialize contract when signer is available
   useEffect(() => {
     if (provider && connected) {
-      const bountyContract = new ethers.Contract(CONTRACT_ADDRESS, BountySystemABI.abi, signer || provider)
+      const bountyContract = new ethers.Contract(communityAddress, abi.abi, signer || provider)
       setContract(bountyContract)
 
       // Load all bounties

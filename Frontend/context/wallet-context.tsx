@@ -1,16 +1,16 @@
-"use client"
+"use client";
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import { ethers } from "ethers"
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { ethers } from "ethers";
 
 interface WalletContextType {
-  provider: ethers.BrowserProvider | null
-  signer: ethers.JsonRpcSigner | null
-  address: string
-  connected: boolean
-  chainId: number | null
-  connect: () => Promise<void>
-  disconnect: () => void
+  provider: ethers.providers.Web3Provider | null;
+  signer: ethers.Signer | null;
+  address: string;
+  connected: boolean;
+  chainId: number | null;
+  connect: () => Promise<void>;
+  disconnect: () => void;
 }
 
 const WalletContext = createContext<WalletContextType>({
@@ -21,94 +21,87 @@ const WalletContext = createContext<WalletContextType>({
   chainId: null,
   connect: async () => {},
   disconnect: () => {},
-})
+});
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null)
-  const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null)
-  const [address, setAddress] = useState("")
-  const [connected, setConnected] = useState(false)
-  const [chainId, setChainId] = useState<number | null>(null)
+  const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null);
+  const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const [address, setAddress] = useState("");
+  const [connected, setConnected] = useState(false);
+  const [chainId, setChainId] = useState<number | null>(null);
 
-  // Initialize provider on client-side
   useEffect(() => {
-    if (typeof window !== "undefined" && window.ethereum) {
-      const ethersProvider = new ethers.BrowserProvider(window.ethereum)
-      setProvider(ethersProvider)
+    if (typeof window !== "undefined" && (window as any).ethereum) {
+      const ethersProvider = new ethers.providers.Web3Provider((window as any).ethereum);
+      setProvider(ethersProvider);
 
-      // Check if already connected
       const checkConnection = async () => {
         try {
-          const accounts = await ethersProvider.listAccounts()
+          const accounts = await ethersProvider.listAccounts();
           if (accounts.length > 0) {
-            const ethSigner = await ethersProvider.getSigner()
-            const userAddress = await ethSigner.getAddress()
-            const network = await ethersProvider.getNetwork()
+            const ethSigner = ethersProvider.getSigner();
+            const userAddress = await ethSigner.getAddress();
+            const network = await ethersProvider.getNetwork();
 
-            setSigner(ethSigner)
-            setAddress(userAddress)
-            setConnected(true)
-            setChainId(Number(network.chainId))
+            setSigner(ethSigner);
+            setAddress(userAddress);
+            setConnected(true);
+            setChainId(network.chainId);
           }
         } catch (error) {
-          console.error("Failed to check wallet connection:", error)
+          console.error("Failed to check wallet connection:", error);
         }
-      }
+      };
 
-      checkConnection()
+      checkConnection();
 
-      // Listen for account changes
-      window.ethereum.on("accountsChanged", (accounts: string[]) => {
+      (window as any).ethereum.on("accountsChanged", (accounts: string[]) => {
         if (accounts.length === 0) {
-          // User disconnected
-          disconnect()
+          disconnect();
         } else {
-          // Account changed, reconnect
-          connect()
+          connect();
         }
-      })
+      });
 
-      // Listen for chain changes
-      window.ethereum.on("chainChanged", () => {
-        window.location.reload()
-      })
+      (window as any).ethereum.on("chainChanged", () => {
+        window.location.reload();
+      });
 
       return () => {
-        window.ethereum.removeAllListeners("accountsChanged")
-        window.ethereum.removeAllListeners("chainChanged")
-      }
+        (window as any).ethereum.removeAllListeners("accountsChanged");
+        (window as any).ethereum.removeAllListeners("chainChanged");
+      };
     }
-  }, [])
+  }, []);
 
   const connect = async () => {
     if (!provider) {
-      console.error("No provider available")
-      return
+      console.error("No provider available");
+      return;
     }
 
     try {
-      // Request account access
-      await window.ethereum.request({ method: "eth_requestAccounts" })
+      await (window as any).ethereum.request({ method: "eth_requestAccounts" });
 
-      const ethSigner = await provider.getSigner()
-      const userAddress = await ethSigner.getAddress()
-      const network = await provider.getNetwork()
+      const ethSigner = provider.getSigner();
+      const userAddress = await ethSigner.getAddress();
+      const network = await provider.getNetwork();
 
-      setSigner(ethSigner)
-      setAddress(userAddress)
-      setConnected(true)
-      setChainId(Number(network.chainId))
+      setSigner(ethSigner);
+      setAddress(userAddress);
+      setConnected(true);
+      setChainId(network.chainId);
     } catch (error) {
-      console.error("Failed to connect wallet:", error)
+      console.error("Failed to connect wallet:", error);
     }
-  }
+  };
 
   const disconnect = () => {
-    setSigner(null)
-    setAddress("")
-    setConnected(false)
-    setChainId(null)
-  }
+    setSigner(null);
+    setAddress("");
+    setConnected(false);
+    setChainId(null);
+  };
 
   return (
     <WalletContext.Provider
@@ -124,8 +117,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     >
       {children}
     </WalletContext.Provider>
-  )
+  );
 }
 
-export const useWallet = () => useContext(WalletContext)
-
+export const useWallet = () => useContext(WalletContext);
