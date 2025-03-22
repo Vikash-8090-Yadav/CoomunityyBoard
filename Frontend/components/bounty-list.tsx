@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useBounty } from "@/context/bounty-context"
-import { formatEther } from "ethers"
+import { formatUnits } from "ethers/lib/utils"
 import { Calendar, Clock, Award } from "lucide-react"
 
 export default function BountyList() {
