@@ -14,6 +14,11 @@ import { Calendar, Clock, Award, User, FileText, Loader2 } from "lucide-react"
 import SubmitProofForm from "@/components/submit-proof-form"
 import VerificationPanel from "@/components/verification-panel"
 
+
+import abi from "../abi/CommunityBountyBoard.json"
+
+import {communityAddress} from "../config"
+
 export default function BountyDetails({ id }: { id: string }) {
   const router = useRouter()
   const { connected, address } = useWallet()
