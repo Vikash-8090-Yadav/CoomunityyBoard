@@ -1,0 +1,1 @@
+export const communityAddress = "0x75c2034a9dbE070B7c04F8b6bDe2C87A66808bd5"
