@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { useWallet } from "@/context/wallet-context"
 import { Menu, X } from "lucide-react"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 export default function Header() {
   const { connected, address, connect, disconnect } = useWallet()
@@ -49,7 +50,8 @@ export default function Header() {
             ))}
           </nav>
 
-          <div className="hidden md:flex items-center">
+          <div className="hidden md:flex items-center space-x-2">
+            <ThemeToggle />
             {connected ? (
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-muted-foreground">{formatAddress(address)}</span>
@@ -89,7 +91,8 @@ export default function Header() {
                 {item.name}
               </Link>
             ))}
-            <div className="pt-4">
+            <div className="pt-4 flex items-center justify-between">
+              <ThemeToggle />
               {connected ? (
                 <div className="flex flex-col space-y-2">
                   <span className="text-sm text-muted-foreground">{formatAddress(address)}</span>
