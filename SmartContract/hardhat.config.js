@@ -13,6 +13,13 @@ module.exports = {
   solidity: "0.8.10",
 
   defaultNetwork: "confluxTestnet",
+  settings: {
+    viaIR: true,
+    optimizer: {
+      enabled: true,
+      runs: 200,
+    },
+  },
   networks:{
     hardhat:{},
     confluxTestnet: {

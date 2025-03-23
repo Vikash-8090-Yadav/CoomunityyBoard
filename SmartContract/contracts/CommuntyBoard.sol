@@ -10,6 +10,15 @@ contract CommunityBountyBoard is Ownable {
     constructor() Ownable() { }
 
     // Structs
+    struct Submission {
+        address submitter;
+        string ipfsProofHash;
+        uint256 timestamp;
+        bool approved;
+        uint256 approvalCount;
+        mapping(address => bool) hasVoted;
+    }
+
     struct Bounty {
         uint256 id;
         address creator;
@@ -21,9 +30,8 @@ contract CommunityBountyBoard is Ownable {
         uint256 deadline;
         bool completed;
         address winner;
-        string ipfsProofHash; // Hash of the proof submitted by the winner
-        uint256 approvalCount;
-        mapping(address => bool) hasVoted;
+        uint256 submissionCount;
+        mapping(uint256 => Submission) submissions;
     }
 
     // State variables
@@ -31,6 +39,8 @@ contract CommunityBountyBoard is Ownable {
     uint256 public minimumApprovals = 3; // Minimum votes needed to approve a bounty
     mapping(uint256 => Bounty) public bounties;
     mapping(address => uint256) public userReputation;
+    mapping(address => uint256[]) private userBounties; // Bounties created by user
+    mapping(address => uint256[]) private userSubmissions; // Bounty IDs where user has submitted
 
     // Events
     event BountyCreated(uint256 indexed bountyId, address indexed creator, string title, uint256 reward);
@@ -61,6 +71,10 @@ contract CommunityBountyBoard is Ownable {
         newBounty.reward = _reward;
         newBounty.rewardToken = _rewardToken;
         newBounty.deadline = _deadline;
+        newBounty.submissionCount = 0;
+
+        // Add to user's bounties
+        userBounties[msg.sender].push(bountyId);
 
         // Transfer reward to contract
         if (_rewardToken == address(0)) {
@@ -78,85 +92,66 @@ contract CommunityBountyBoard is Ownable {
     // Submit proof of task completion
     function submitProof(uint256 _bountyId, string memory _ipfsProofHash) external {
         Bounty storage bounty = bounties[_bountyId];
-
         require(!bounty.completed, "Bounty already completed");
         require(block.timestamp <= bounty.deadline, "Bounty deadline has passed");
 
-        bounty.ipfsProofHash = _ipfsProofHash;
-        bounty.winner = msg.sender;
+        uint256 submissionId = bounty.submissionCount++;
+        Submission storage submission = bounty.submissions[submissionId];
+        submission.submitter = msg.sender;
+        submission.ipfsProofHash = _ipfsProofHash;
+        submission.timestamp = block.timestamp;
+        submission.approvalCount = 0;
+
+        // Add to user's submissions
+        userSubmissions[msg.sender].push(_bountyId);
 
         emit ProofSubmitted(_bountyId, msg.sender, _ipfsProofHash);
     }
 
     // Vote to approve a submission
-    function approveSubmission(uint256 _bountyId) external {
+    function approveSubmission(uint256 _bountyId, uint256 _submissionId) external {
         Bounty storage bounty = bounties[_bountyId];
+        require(_submissionId < bounty.submissionCount, "Invalid submission ID");
+        Submission storage submission = bounty.submissions[_submissionId];
 
         require(!bounty.completed, "Bounty already completed");
-        require(bounty.winner != address(0), "No submission to approve");
-        require(!bounty.hasVoted[msg.sender], "Already voted");
-        require(msg.sender != bounty.winner, "Cannot approve own submission");
+        require(!submission.hasVoted[msg.sender], "Already voted");
+        require(msg.sender != submission.submitter, "Cannot approve own submission");
 
-        bounty.hasVoted[msg.sender] = true;
-        bounty.approvalCount++;
+        submission.hasVoted[msg.sender] = true;
+        submission.approvalCount++;
 
         emit BountyApproved(_bountyId, msg.sender);
 
         // Check if enough approvals to complete bounty
-        if (bounty.approvalCount >= minimumApprovals) {
-            completeBounty(_bountyId);
+        if (submission.approvalCount >= minimumApprovals) {
+            completeBounty(_bountyId, _submissionId);
         }
     }
 
     // Complete bounty and distribute rewards
-    function completeBounty(uint256 _bountyId) internal {
+    function completeBounty(uint256 _bountyId, uint256 _submissionId) internal {
         Bounty storage bounty = bounties[_bountyId];
+        Submission storage submission = bounty.submissions[_submissionId];
 
         bounty.completed = true;
+        bounty.winner = submission.submitter;
+        submission.approved = true;
 
         // Increase reputation
-        userReputation[bounty.winner] += 10;
+        userReputation[submission.submitter] += 10;
         userReputation[bounty.creator] += 5;
 
         // Transfer reward
         if (bounty.rewardToken == address(0)) {
             // Native currency
-            payable(bounty.winner).transfer(bounty.reward);
+            payable(submission.submitter).transfer(bounty.reward);
         } else {
             // ERC20 token
-            IERC20(bounty.rewardToken).safeTransfer(bounty.winner, bounty.reward);
+            IERC20(bounty.rewardToken).safeTransfer(submission.submitter, bounty.reward);
         }
 
-        emit BountyCompleted(_bountyId, bounty.winner, bounty.reward);
-    }
-
-    // Allow creator to cancel bounty before deadline and if no submissions
-    function cancelBounty(uint256 _bountyId) external {
-        Bounty storage bounty = bounties[_bountyId];
-
-        require(msg.sender == bounty.creator, "Only creator can cancel");
-        require(!bounty.completed, "Bounty already completed");
-        require(bounty.winner == address(0), "Cannot cancel after submission");
-
-        // Return funds to creator
-        if (bounty.rewardToken == address(0)) {
-            // Native currency
-            payable(bounty.creator).transfer(bounty.reward);
-        } else {
-            // ERC20 token
-            IERC20(bounty.rewardToken).safeTransfer(bounty.creator, bounty.reward);
-        }
-
-        // Mark as completed to prevent further interaction
-        bounty.completed = true;
-
-        emit BountyCanceled(_bountyId, bounty.creator);
-    }
-
-    // Allow DAO/community to adjust minimum approval threshold
-    function setMinimumApprovals(uint256 _minimumApprovals) external onlyOwner {
-        require(_minimumApprovals > 0, "Minimum approvals must be greater than 0");
-        minimumApprovals = _minimumApprovals;
+        emit BountyCompleted(_bountyId, submission.submitter, bounty.reward);
     }
 
     // Helper functions for frontend
@@ -170,11 +165,9 @@ contract CommunityBountyBoard is Ownable {
         uint256 deadline,
         bool completed,
         address winner,
-        string memory ipfsProofHash,
-        uint256 approvalCount
+        uint256 submissionCount
     ) {
         Bounty storage bounty = bounties[_bountyId];
-
         return (
             bounty.creator,
             bounty.title,
@@ -185,13 +178,49 @@ contract CommunityBountyBoard is Ownable {
             bounty.deadline,
             bounty.completed,
             bounty.winner,
-            bounty.ipfsProofHash,
-            bounty.approvalCount
+            bounty.submissionCount
         );
     }
 
-    // Check if a user has voted on a specific bounty
-    function hasVotedOnBounty(uint256 _bountyId, address _user) external view returns (bool) {
-        return bounties[_bountyId].hasVoted[_user];
+    // Get submission details
+    function getSubmission(uint256 _bountyId, uint256 _submissionId) external view returns (
+        address submitter,
+        string memory ipfsProofHash,
+        uint256 timestamp,
+        bool approved,
+        uint256 approvalCount
+    ) {
+        require(_submissionId < bounties[_bountyId].submissionCount, "Invalid submission ID");
+        Submission storage submission = bounties[_bountyId].submissions[_submissionId];
+        return (
+            submission.submitter,
+            submission.ipfsProofHash,
+            submission.timestamp,
+            submission.approved,
+            submission.approvalCount
+        );
     }
+
+    // Get bounties created by a user
+    function getUserBounties(address _user) external view returns (uint256[] memory) {
+        return userBounties[_user];
+    }
+
+    // Get bounties where user has submitted proofs
+    function getUserSubmissions(address _user) external view returns (uint256[] memory) {
+        return userSubmissions[_user];
+    }
+
+    // Get submission count for a bounty
+    function getSubmissionCount(uint256 _bountyId) external view returns (uint256) {
+        return bounties[_bountyId].submissionCount;
+    }
+
+    // Check if a user has voted on a specific submission
+    function hasVotedOnSubmission(uint256 _bountyId, uint256 _submissionId, address _user) external view returns (bool) {
+        return bounties[_bountyId].submissions[_submissionId].hasVoted[_user];
+    }
+
+    receive() external payable {}
+    fallback() external payable {}
 }
