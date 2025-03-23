@@ -7,16 +7,19 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useWallet } from "@/context/wallet-context"
 import { useBounty } from "@/context/bounty-context"
-import { formatEther } from "ethers"
-import { Award, Calendar, User, FileText, Loader2 } from "lucide-react"
+import { formatEther } from "@ethersproject/units"
+import { Award, Calendar, User, FileText, Loader2, Trophy, Star } from "lucide-react"
 import Link from "next/link"
+import ReputationBadge from "@/components/reputation-badge"
+import { Progress } from "@/components/ui/progress"
+import type { Bounty, Submission } from "@/types/bounty"
 
 export default function UserProfile() {
   const { connected, address } = useWallet()
   const { getUserBounties, getUserSubmissions, getUserReputation } = useBounty()
 
-  const [createdBounties, setCreatedBounties] = useState([])
-  const [submissions, setSubmissions] = useState([])
+  const [createdBounties, setCreatedBounties] = useState<Bounty[]>([])
+  const [submissions, setSubmissions] = useState<Submission[]>([])
   const [reputation, setReputation] = useState(0)
   const [loading, setLoading] = useState(true)
 
@@ -46,11 +49,11 @@ export default function UserProfile() {
     fetchUserData()
   }, [connected, address, getUserBounties, getUserSubmissions, getUserReputation])
 
-  const formatDate = (timestamp) => {
+  const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleDateString()
   }
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status: number) => {
     switch (status) {
       case 0: // Active
         return <Badge className="bg-green-500">Active</Badge>
@@ -61,6 +64,26 @@ export default function UserProfile() {
       default:
         return <Badge>Unknown</Badge>
     }
+  }
+
+  // Calculate next reputation tier
+  const getNextTier = () => {
+    if (reputation < 10) return { name: "Contributor", target: 10, progress: (reputation / 10) * 100 }
+    if (reputation < 50) return { name: "Expert", target: 50, progress: ((reputation - 10) / 40) * 100 }
+    if (reputation < 100) return { name: "Master", target: 100, progress: ((reputation - 50) / 50) * 100 }
+    return { name: "Master", target: reputation, progress: 100 }
+  }
+
+  const nextTier = getNextTier()
+
+  // Calculate stats
+  const stats = {
+    created: createdBounties.length,
+    completed: submissions.filter((s) => s.approved).length,
+    pending: submissions.filter((s) => !s.approved).length,
+    totalEarned: submissions
+      .filter((s) => s.approved)
+      .reduce((sum: number, sub: Submission) => sum + Number.parseFloat(formatEther(sub.reward)), 0),
   }
 
   if (!connected) {
@@ -101,9 +124,37 @@ export default function UserProfile() {
                   <p className="text-muted-foreground">Wallet Address</p>
                 </div>
               </div>
+
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-5 w-5 text-primary" />
+                    <span className="font-medium">Reputation</span>
+                  </div>
+                  <ReputationBadge reputation={reputation} size="lg" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span>Progress to {nextTier.name}</span>
+                    <span>
+                      {reputation} / {nextTier.target}
+                    </span>
+                  </div>
+                  <Progress value={nextTier.progress} className="h-2" />
+                </div>
+                <div className="mt-4 text-sm text-muted-foreground">
+                  <p>How to earn reputation:</p>
+                  <ul className="list-disc pl-5 mt-1 space-y-1">
+                    <li>Create a bounty (+1 point)</li>
+                    <li>Complete a bounty (+5 points)</li>
+                    <li>Verify submissions (+1 point per verification)</li>
+                  </ul>
+                </div>
+              </div>
             </div>
 
             <div className="flex-1">
+              <h3 className="text-lg font-medium mb-4">Stats</h3>
               <div className="grid grid-cols-2 gap-4">
                 <Card>
                   <CardContent className="p-4 flex items-center gap-4">
@@ -111,8 +162,8 @@ export default function UserProfile() {
                       <Award className="h-6 w-6 text-primary" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Reputation</p>
-                      <p className="text-xl font-bold">{reputation}</p>
+                      <p className="text-sm text-muted-foreground">Bounties Created</p>
+                      <p className="text-xl font-bold">{stats.created}</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -123,8 +174,32 @@ export default function UserProfile() {
                       <FileText className="h-6 w-6 text-primary" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Completed</p>
-                      <p className="text-xl font-bold">{submissions.filter((s) => s.approved).length}</p>
+                      <p className="text-sm text-muted-foreground">Bounties Completed</p>
+                      <p className="text-xl font-bold">{stats.completed}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <div className="bg-primary/10 p-3 rounded-full">
+                      <Star className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Pending Submissions</p>
+                      <p className="text-xl font-bold">{stats.pending}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <div className="bg-primary/10 p-3 rounded-full">
+                      <Award className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Earned</p>
+                      <p className="text-xl font-bold">{stats.totalEarned.toFixed(3)} ETH</p>
                     </div>
                   </CardContent>
                 </Card>
