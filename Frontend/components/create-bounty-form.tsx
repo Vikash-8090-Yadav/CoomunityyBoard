@@ -14,13 +14,13 @@ import { format } from "date-fns"
 import { CalendarIcon, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useWallet } from "@/context/wallet-context"
-import { useBounty } from "@/context/bounty-context"
-import { parseEther } from "ethers"
+import { ethers } from "ethers"
+import { communityAddress } from "@/config"
+import abi from "@/abi/CommunityBountyBoard.json"
 
 export default function CreateBountyForm() {
   const router = useRouter()
-  const { connected } = useWallet()
-  const { createBounty } = useBounty()
+  const { connected, provider } = useWallet()
 
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
@@ -29,9 +29,9 @@ export default function CreateBountyForm() {
   const [tokenType, setTokenType] = useState("native")
   const [date, setDate] = useState<Date>()
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [error, setError] = useState<string>("")
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!connected) {
@@ -48,24 +48,40 @@ export default function CreateBountyForm() {
       setLoading(true)
       setError("")
 
-      // Convert deadline to Unix timestamp
-      const deadline = Math.floor(date.getTime() / 1000)
+      if (!provider) {
+        throw new Error("Provider is not available")
+      }
 
-      // Create bounty on the blockchain
-      await createBounty(
+      const signer = provider.getSigner()
+      const contract = new ethers.Contract(communityAddress, abi.abi, signer)
+
+      // Convert reward to wei
+      const rewardInWei = ethers.utils.parseEther(reward)
+      
+      // Calculate deadline timestamp in seconds
+      const deadline = Math.floor(date.getTime() / 1000)
+      
+      // Set reward token address (use zero address for native ETH)
+      const rewardToken = tokenType === "native" ? "0x0000000000000000000000000000000000000000" : "0x0000000000000000000000000000000000000000" // For now, only supporting native ETH
+
+      // Create bounty transaction
+      const tx = await contract.createBounty(
         title,
         description,
-        requirements,
-        parseEther(reward),
-        tokenType === "native" ? true : false,
+        requirements, // This is proofRequirements in the contract
+        rewardInWei,
+        rewardToken,
         deadline,
-        { value: tokenType === "native" ? parseEther(reward) : 0 },
+        {
+          value: tokenType === "native" ? rewardInWei : ethers.utils.parseEther("0"), // Send ETH only if native token
+        }
       )
 
-      router.push("/")
+      await tx.wait()
+      router.push("/") // Redirect to home page after successful creation
     } catch (err) {
       console.error("Error creating bounty:", err)
-      setError(err.message || "Failed to create bounty")
+      setError(err instanceof Error ? err.message : "Failed to create bounty")
     } finally {
       setLoading(false)
     }
@@ -112,7 +128,7 @@ export default function CreateBountyForm() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <Label htmlFor="reward">Reward Amount</Label>
+              <Label htmlFor="reward">Reward Amount (ETH)</Label>
               <Input
                 id="reward"
                 type="number"
@@ -132,12 +148,6 @@ export default function CreateBountyForm() {
                   <RadioGroupItem value="native" id="native" />
                   <Label htmlFor="native">Native (ETH)</Label>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="erc20" id="erc20" disabled />
-                  <Label htmlFor="erc20" className="text-muted-foreground">
-                    ERC20 (Coming soon)
-                  </Label>
-                </div>
               </RadioGroup>
             </div>
           </div>
@@ -146,15 +156,12 @@ export default function CreateBountyForm() {
             <Label>Deadline</Label>
             <Popover>
               <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
-                >
+                <Button variant="outline" className={cn("w-full justify-start", !date && "text-muted-foreground")}>
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {date ? format(date, "PPP") : "Select a date"}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
+              <PopoverContent>
                 <Calendar
                   mode="single"
                   selected={date}
@@ -168,23 +175,11 @@ export default function CreateBountyForm() {
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
-          <Button type="submit" className="w-full" disabled={loading || !connected}>
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating Bounty...
-              </>
-            ) : (
-              "Create Bounty"
-            )}
+          <Button type="submit" disabled={loading || !connected}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Create Bounty"}
           </Button>
-
-          {!connected && (
-            <p className="text-center text-sm text-muted-foreground">Please connect your wallet to create a bounty</p>
-          )}
         </form>
       </CardContent>
     </Card>
   )
 }
-
