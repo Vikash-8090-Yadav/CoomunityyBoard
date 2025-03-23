@@ -10,15 +10,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useBounty } from "@/context/bounty-context"
 import { formatUnits } from "ethers/lib/utils"
 import { Calendar, Clock, Award } from "lucide-react"
+import type { Bounty } from "@/context/bounty-context"
 
 export default function BountyList() {
-  const { bounties, loading } = useBounty()
-  const [filteredBounties, setFilteredBounties] = useState([])
+  const { bounties, loading, error, account } = useBounty()
+  const [filteredBounties, setFilteredBounties] = useState<Bounty[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [sortBy, setSortBy] = useState("deadline")
 
+  // Debug log when component mounts
   useEffect(() => {
-    if (bounties) {
+    console.log('BountyList: Component mounted');
+    console.log('BountyList: Initial bounties:', bounties);
+    console.log('BountyList: Loading state:', loading);
+    console.log('BountyList: Error state:', error);
+    console.log('BountyList: Account:', account);
+  }, []);
+
+  useEffect(() => {
+    console.log('BountyList: Bounties changed:', bounties); // Debug log
+    if (bounties && bounties.length > 0) {
       let filtered = [...bounties]
 
       // Apply search filter
@@ -35,34 +46,45 @@ export default function BountyList() {
         if (sortBy === "deadline") {
           return a.deadline - b.deadline
         } else if (sortBy === "reward") {
-          return Number.parseFloat(formatEther(b.reward)) - Number.parseFloat(formatEther(a.reward))
+          const aReward = formatUnits(a.reward.toString(), 18);
+          const bReward = formatUnits(b.reward.toString(), 18);
+          return Number.parseFloat(bReward) - Number.parseFloat(aReward)
         }
         return 0
       })
 
+      console.log('BountyList: Setting filtered bounties:', filtered); // Debug log
       setFilteredBounties(filtered)
+    } else {
+      console.log('BountyList: No bounties available, clearing filtered bounties'); // Debug log
+      setFilteredBounties([])
     }
   }, [bounties, searchTerm, sortBy])
 
-  const formatDate = (timestamp) => {
+  const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleDateString()
   }
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 0: // Active
-        return <Badge className="bg-green-500">Active</Badge>
-      case 1: // Completed
-        return <Badge className="bg-blue-500">Completed</Badge>
-      case 2: // Cancelled
-        return <Badge className="bg-red-500">Cancelled</Badge>
-      default:
-        return <Badge>Unknown</Badge>
+  const getStatusBadge = (bounty: Bounty) => {
+    if (bounty.completed) {
+      return <Badge className="bg-blue-500">Completed</Badge>
+    } else if (bounty.deadline * 1000 < Date.now()) {
+      return <Badge className="bg-red-500">Expired</Badge>
+    } else {
+      return <Badge className="bg-green-500">Active</Badge>
     }
   }
 
   if (loading) {
     return <div className="flex justify-center p-8">Loading bounties...</div>
+  }
+
+  if (error) {
+    return <div className="flex justify-center p-8 text-red-500">Error: {error}</div>
+  }
+
+  if (!account) {
+    return <div className="flex justify-center p-8">Please connect your wallet to view bounties</div>
   }
 
   return (
@@ -84,26 +106,27 @@ export default function BountyList() {
         </div>
       </div>
 
-      {filteredBounties.length === 0 ? (
+      {(!bounties || bounties.length === 0) ? (
         <div className="text-center py-10">
           <p className="text-muted-foreground">No bounties found</p>
+          <p className="text-sm text-muted-foreground mt-2">Total bounties: {bounties?.length || 0}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredBounties.map((bounty) => (
+          {filteredBounties.map((bounty: Bounty) => (
             <Card key={bounty.id} className="flex flex-col">
               <CardHeader>
                 <div className="flex justify-between items-start">
-                  <CardTitle className="line-clamp-1">{bounty.title}</CardTitle>
-                  {getStatusBadge(bounty.status)}
+                  <CardTitle className="line-clamp-1">{bounty.title ?? 'Untitled'}</CardTitle>
+                  {getStatusBadge(bounty)}
                 </div>
               </CardHeader>
               <CardContent className="flex-grow">
-                <p className="text-muted-foreground line-clamp-3 mb-4">{bounty.description}</p>
+                <p className="text-muted-foreground line-clamp-3 mb-4">{bounty.description ?? 'No description available'}</p>
                 <div className="space-y-2">
                   <div className="flex items-center text-sm">
                     <Award className="mr-2 h-4 w-4" />
-                    <span>{formatEther(bounty.reward)} ETH</span>
+                    <span>{bounty.reward ? `${formatUnits(bounty.reward.toString(), 18)} ETH` : 'Reward not specified'}</span>
                   </div>
                   <div className="flex items-center text-sm">
                     <Calendar className="mr-2 h-4 w-4" />
