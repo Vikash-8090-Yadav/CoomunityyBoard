@@ -4,7 +4,14 @@ import { ThemeProvider } from "@/components/theme-provider"
 import Header from "@/components/header"
 import BountyDetails from "@/components/bounty-details"
 
-export default function BountyPage({ params }: { params: { id: string } }) {
+interface PageProps {
+  params: {
+    id: string;
+  };
+  searchParams: { [key: string]: string | string[] | undefined };
+}
+
+export default async function BountyPage({ params, searchParams }: PageProps) {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <WalletProvider>
