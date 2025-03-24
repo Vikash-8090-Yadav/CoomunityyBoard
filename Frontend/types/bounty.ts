@@ -6,13 +6,17 @@ export interface Submission {
   timestamp: number
   approved: boolean
   approvalCount: number
+  rejectCount: number
+  isWinner: boolean
+  rewardShare: number
   hasVoted?: boolean
-  proofCID?: string
-  comments?: string
-  bountyTitle?: string
-  description?: string
-  reward?: bigint
+  txHash?: string
   verifiers?: string[]
+  proofCID?: string
+  comments?: string[]
+  payoutTxHash?: string
+  bountyTitle?: string
+  reward?: string | bigint
 }
 
 export interface Bounty {
@@ -21,15 +25,15 @@ export interface Bounty {
   title: string
   description: string
   proofRequirements: string
-  reward: bigint
+  reward: string | bigint
   rewardToken: string
   deadline: number
   completed: boolean
-  winner: string
+  winnerCount: number
   submissionCount: number
   submissions: Submission[]
-  status: number // 0: Active, 1: Completed, 2: Cancelled
-  minimumApprovals: number
+  status: number
+  winner?: string
 }
 
 // The file structure from Pinata response
@@ -53,14 +57,19 @@ export interface BountyContextType {
   bounties: Bounty[]
   loading: boolean
   error: string | null
-  createBounty: (title: string, description: string, reward: number, deadline: number) => Promise<void>
-  submitSolution: (bountyId: number, description: string, link: string) => Promise<void>
-  approveSolution: (bountyId: number, submissionId: number) => Promise<void>
+  createBounty: (
+    title: string,
+    description: string,
+    proofRequirements: string,
+    reward: number,
+    rewardToken: string,
+    deadline: number
+  ) => Promise<void>
+  submitProof: (bountyId: number, proofHash: string) => Promise<void>
+  voteOnSubmission: (bountyId: number, submissionId: number, approve: boolean) => Promise<void>
+  completeBounty: (bountyId: number) => Promise<void>
   getBountyDetails: (bountyId: number) => Promise<Bounty>
-  getUserReputation: (address: string) => Promise<number>
-  getUserBounties: (address: string) => Promise<Bounty[]>
-  getUserSubmissions: (address: string) => Promise<Submission[]>
-  verifySubmission: (bountyId: number, submissionIndex: number, approve: boolean) => Promise<void>
-  completeAndPayBounty: (bountyId: number, submissionIndex: number) => Promise<void>
-  submitProof: (bountyId: string, proofCID: string) => Promise<void>
+  getUserBounties: (address: string) => Promise<number[]>
+  getUserSubmissions: (address: string) => Promise<number[]>
+  hasVotedOnSubmission: (bountyId: number, submissionId: number, address: string) => Promise<boolean>
 } 
