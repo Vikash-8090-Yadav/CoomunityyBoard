@@ -10,12 +10,14 @@ import { Separator } from "@/components/ui/separator"
 import { useWallet } from "@/context/wallet-context"
 import { useBounty } from "@/context/bounty-context"
 import { formatEther } from "ethers/lib/utils"
-import { Calendar, Clock, Award, User, FileText, Loader2, AlertTriangle, Trophy } from "lucide-react"
+import { Calendar, Clock, Award, User, FileText, Loader2, AlertTriangle, Trophy, ExternalLink } from "lucide-react"
 import VerificationPanel from "@/components/verification-panel"
 import SubmissionDetails from "./submission-details"
 import { formatDistanceToNow } from "date-fns"
 import type { Bounty, Submission } from "@/types/bounty"
 import CollapsibleSubmitProof from "./collapsible-submit-proof"
+import { useAccount } from "@/context/account-context"
+import { contract } from "@/lib/contract"
 
 interface BountyDetailsProps {
   id: string
@@ -25,6 +27,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
   const router = useRouter()
   const { connected, address, chainId } = useWallet()
   const { getBountyDetails } = useBounty()
+  const { address: accountAddress } = useAccount()
 
   const [bounty, setBounty] = useState<Bounty | null>(null)
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null)
@@ -32,6 +35,21 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
   const [error, setError] = useState<string | null>(null)
   const [isSubmitProofOpen, setIsSubmitProofOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("details")
+  const [hasVoted, setHasVoted] = useState(false)
+  const [isVoting, setIsVoting] = useState(false)
+  const [voteError, setVoteError] = useState<string | null>(null)
+  const [isLoadingVoteStatus, setIsLoadingVoteStatus] = useState(true)
+  const [payoutTxHash, setPayoutTxHash] = useState<string | null>(null)
+
+  // Add useEffect for tab persistence
+  useEffect(() => {
+    const storedTab = localStorage.getItem('bounty-active-tab')
+    if (storedTab) {
+      setActiveTab(storedTab)
+      // Clear the stored preference after using it
+      localStorage.removeItem('bounty-active-tab')
+    }
+  }, [])
 
   const loadBounty = useCallback(async () => {
     if (!connected || !id) return
@@ -52,6 +70,37 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
   useEffect(() => {
     loadBounty()
   }, [loadBounty])
+
+  useEffect(() => {
+    const checkVoteStatus = async () => {
+      if (!accountAddress || !bounty || !selectedSubmission) return;
+      
+      try {
+        const voted = await contract.hasVotedOnSubmission(bounty.id, selectedSubmission.id, accountAddress);
+        setHasVoted(voted);
+      } catch (error) {
+        console.error('Error checking vote status:', error);
+      } finally {
+        setIsLoadingVoteStatus(false);
+      }
+    };
+
+    const getPayoutTxHash = async () => {
+      if (!bounty || !selectedSubmission || !selectedSubmission.isWinner) return;
+      
+      try {
+        const hash = await contract.getPayoutTxHash(bounty.id, selectedSubmission.id);
+        if (hash && hash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
+          setPayoutTxHash(hash);
+        }
+      } catch (error) {
+        console.error('Error getting payout transaction hash:', error);
+      }
+    };
+
+    checkVoteStatus();
+    getPayoutTxHash();
+  }, [accountAddress, bounty, selectedSubmission]);
 
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleDateString()
@@ -100,6 +149,8 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
     setActiveTab(value)
     if (value === "submit") {
       setIsSubmitProofOpen(true)
+    } else if (value === "details") {
+      setIsSubmitProofOpen(false)
     }
   }
 
@@ -164,33 +215,33 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row justify-between items-start gap-4 bg-muted/30 p-4 rounded-lg shadow-sm">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">{bounty?.title}</h1>
-          <div className="flex items-center mt-3 space-x-3">
-            {getStatusBadge(bounty?.status ?? 0)}
-            {isExpired && isActive && (
-              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
-                Expired
-              </Badge>
-            )}
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => router.push("/")}
-          className="mt-3 md:mt-0 shadow-sm hover:shadow transition-all"
-        >
-          Back to Bounties
-        </Button>
-      </div>
-
+    <div className="max-w-7xl mx-auto space-y-6">
       <Card className="overflow-hidden border shadow-md hover:shadow-lg transition-shadow duration-300">
-        <CardContent className="p-0">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
-            <div className="col-span-2 space-y-6 p-6 md:border-r">
-              <div>
+        <CardContent className="p-6">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold text-foreground mb-3">{bounty?.title}</h1>
+              <div className="flex items-center gap-2">
+                {getStatusBadge(bounty?.status ?? 0)}
+                {isExpired && isActive && (
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                    Expired
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => router.push("/")}
+              className="shadow-sm hover:shadow transition-all"
+            >
+              Back to Bounties
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+            <div className="md:col-span-2 space-y-6">
+              <div className="bg-muted/30 p-4 rounded-lg border">
                 <h3 className="text-lg font-medium mb-3 flex items-center text-foreground">
                   <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
                   Description
@@ -198,9 +249,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                 <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{bounty?.description}</p>
               </div>
 
-              <Separator className="my-6" />
-
-              <div>
+              <div className="bg-muted/30 p-4 rounded-lg border">
                 <h3 className="text-lg font-medium mb-3 flex items-center text-foreground">
                   <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
                   Requirements
@@ -209,67 +258,69 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
               </div>
             </div>
 
-            <div className="bg-muted/20 p-6 space-y-6">
-              <div className="bg-card rounded-lg shadow-sm p-5 space-y-5 border">
-                <div className="flex items-center">
-                  <div className="bg-primary/10 p-3 rounded-full">
-                    <Award className="h-5 w-5 text-primary" />
+            <div className="space-y-4">
+              <Card className="bg-card shadow-sm">
+                <CardContent className="p-4 space-y-4">
+                  <div className="flex items-center">
+                    <div className="bg-primary/10 p-3 rounded-full">
+                      <Award className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="ml-4">
+                      <p className="text-sm text-muted-foreground">Reward</p>
+                      <p className="font-medium text-lg">{bounty?.reward ? formatEther(bounty.reward) : "0"} ETH</p>
+                    </div>
                   </div>
-                  <div className="ml-4">
-                    <p className="text-sm text-muted-foreground">Reward</p>
-                    <p className="font-medium text-lg">{bounty?.reward ? formatEther(bounty.reward) : "0"} ETH</p>
-                  </div>
-                </div>
 
-                <Separator />
+                  <Separator />
 
-                <div className="flex items-center">
-                  <div className="bg-primary/10 p-3 rounded-full">
-                    <Calendar className="h-5 w-5 text-primary" />
+                  <div className="flex items-center">
+                    <div className="bg-primary/10 p-3 rounded-full">
+                      <Calendar className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="ml-4">
+                      <p className="text-sm text-muted-foreground">Deadline</p>
+                      <p className="font-medium">{formatDate(bounty?.deadline || 0)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{timeToDeadline}</p>
+                    </div>
                   </div>
-                  <div className="ml-4">
-                    <p className="text-sm text-muted-foreground">Deadline</p>
-                    <p className="font-medium">{formatDate(bounty?.deadline || 0)}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{timeToDeadline}</p>
-                  </div>
-                </div>
 
-                <Separator />
+                  <Separator />
 
-                <div className="flex items-center">
-                  <div className="bg-primary/10 p-3 rounded-full">
-                    <Clock className="h-5 w-5 text-primary" />
+                  <div className="flex items-center">
+                    <div className="bg-primary/10 p-3 rounded-full">
+                      <Clock className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="ml-4">
+                      <p className="text-sm text-muted-foreground">Time Remaining</p>
+                      <p className="font-medium">
+                        {bounty?.deadline && bounty.deadline * 1000 > Date.now() ? (
+                          <span>
+                            {Math.ceil((bounty.deadline * 1000 - Date.now()) / (1000 * 60 * 60 * 24))} days left
+                          </span>
+                        ) : (
+                          <span className="text-red-500">Expired</span>
+                        )}
+                      </p>
+                    </div>
                   </div>
-                  <div className="ml-4">
-                    <p className="text-sm text-muted-foreground">Time Remaining</p>
-                    <p className="font-medium">
-                      {bounty?.deadline && bounty.deadline * 1000 > Date.now() ? (
-                        <span>
-                          {Math.ceil((bounty.deadline * 1000 - Date.now()) / (1000 * 60 * 60 * 24))} days left
-                        </span>
-                      ) : (
-                        <span className="text-red-500">Expired</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
 
-                <Separator />
+                  <Separator />
 
-                <div className="flex items-center">
-                  <div className="bg-primary/10 p-3 rounded-full">
-                    <User className="h-5 w-5 text-primary" />
+                  <div className="flex items-center">
+                    <div className="bg-primary/10 p-3 rounded-full">
+                      <User className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="ml-4">
+                      <p className="text-sm text-muted-foreground">Created by</p>
+                      <p className="font-medium">
+                        {bounty?.creator
+                          ? `${bounty.creator.substring(0, 6)}...${bounty.creator.substring(bounty.creator.length - 4)}`
+                          : "Unknown"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="ml-4">
-                    <p className="text-sm text-muted-foreground">Created by</p>
-                    <p className="font-medium">
-                      {bounty?.creator
-                        ? `${bounty.creator.substring(0, 6)}...${bounty.creator.substring(bounty.creator.length - 4)}`
-                        : "Unknown"}
-                    </p>
-                  </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
 
               {isActive && connected && !isCreator && (
                 <Button
@@ -287,135 +338,172 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
         </CardContent>
       </Card>
 
-      <Tabs value={activeTab} className="space-y-4" onValueChange={handleTabChange}>
-        <TabsList>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          {bounty.status === 0 && !isCreator && connected && <TabsTrigger value="submit">Submit Proof</TabsTrigger>}
-          <TabsTrigger value="verification">Verification</TabsTrigger>
-        </TabsList>
+      <Card className="overflow-hidden border shadow-md">
+        <CardContent className="p-6">
+          <Tabs value={activeTab} className="space-y-4" onValueChange={handleTabChange}>
+            <TabsList className="w-full justify-start">
+              <TabsTrigger value="details">Details</TabsTrigger>
+              {bounty.status === 0 && !isCreator && connected && <TabsTrigger value="submit">Submit Proof</TabsTrigger>}
+              <TabsTrigger value="verification">Verification</TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="details">
-          {!bounty?.submissions?.length ? (
-            <Card className="border-dashed border-2 bg-muted/10">
-              <CardContent className="p-10 text-center">
-                <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4 opacity-50" />
-                <p className="text-muted-foreground">No submissions yet</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-6">
-              {bounty.submissions.map((submission: Submission, index: number) => (
-                <Card
-                  key={index}
-                  className={`overflow-hidden transition-all duration-300 ${submission.approved ? "border-green-200 shadow-green-100 dark:border-green-800" : "hover:shadow-md"}`}
-                >
-                  <CardHeader className="bg-muted/30 pb-3">
-                    <div className="flex justify-between items-center">
-                      <CardTitle className="text-lg flex items-center">
-                        <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
-                        Submission #{index + 1}
-                      </CardTitle>
-                      {submission.approved ? (
-                        <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
-                          Approved
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
-                          Pending
-                        </Badge>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-4">
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Submitted by</p>
-                          <div className="flex items-center">
-                            <User className="h-4 w-4 mr-2 text-primary/70" />
-                            <p className="font-medium">{`${submission.submitter.substring(0, 6)}...${submission.submitter.substring(submission.submitter.length - 4)}`}</p>
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Proof</p>
-                          <a
-                            href={`https://ipfs.io/ipfs/${submission.proofCID}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline flex items-center group"
-                          >
-                            <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
-                            <span className="font-medium">View Proof on IPFS</span>
-                          </a>
-                        </div>
-                      </div>
-
-                      {submission.comments && (
-                        <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Comments</p>
-                          <div className="bg-muted/20 p-3 rounded-md border border-border/50">
-                            <p className="whitespace-pre-line text-sm">{submission.comments}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+            <TabsContent value="details" className="mt-4">
+              {!bounty?.submissions?.length ? (
+                <Card className="border-dashed border-2 bg-muted/10">
+                  <CardContent className="p-10 text-center">
+                    <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4 opacity-50" />
+                    <p className="text-muted-foreground">No submissions yet</p>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {bounty.submissions.map((submission: Submission, index: number) => (
+                    <Card
+                      key={index}
+                      className={`overflow-hidden transition-all duration-300 ${
+                        submission.approved ? "border-green-200 shadow-green-100 dark:border-green-800" : "hover:shadow-md"
+                      }`}
+                    >
+                      <CardHeader className="pb-3">
+                        <div className="flex justify-between items-center">
+                          <CardTitle className="text-lg flex items-center">
+                            <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
+                            Submission #{index + 1}
+                          </CardTitle>
+                          {submission.approved ? (
+                            <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
+                              Approved
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                              Pending
+                            </Badge>
+                          )}
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-4">
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 gap-4">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Submitted by</p>
+                              <div className="flex items-center">
+                                <User className="h-4 w-4 mr-2 text-primary/70" />
+                                <p className="font-medium">{`${submission.submitter.substring(0, 6)}...${submission.submitter.substring(submission.submitter.length - 4)}`}</p>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Proof</p>
+                              {submission.proofCID ? (
+                                <a
+                                  href={`https://gateway.pinata.cloud/ipfs/${submission.proofCID}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline flex items-center group"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    const pinataUrl = `https://gateway.pinata.cloud/ipfs/${submission.proofCID}`;
+                                    const publicUrl = `https://ipfs.io/ipfs/${submission.proofCID}`;
+                                    
+                                    fetch(pinataUrl)
+                                      .then(response => {
+                                        if (response.ok) {
+                                          window.open(pinataUrl, '_blank');
+                                        } else {
+                                          window.open(publicUrl, '_blank');
+                                        }
+                                      })
+                                      .catch(() => {
+                                        window.open(publicUrl, '_blank');
+                                      });
+                                  }}
+                                >
+                                  <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
+                                  <span className="font-medium">View Proof</span>
+                                </a>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setActiveTab("verification");
+                                    setSelectedSubmission(submission);
+                                  }}
+                                  className="text-primary hover:underline flex items-center group"
+                                >
+                                  <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
+                                  <span className="font-medium">See Proof</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
 
-        <TabsContent value="submit">
-          {bounty.status === 0 && !isCreator && connected && (
-            <div className="space-y-4">
-              <CollapsibleSubmitProof
-                bountyId={bounty.id.toString()}
-                bountyTitle={bounty.title}
-                isOpen={isSubmitProofOpen}
-                setIsOpen={setIsSubmitProofOpen}
-              />
-            </div>
-          )}
-        </TabsContent>
+                          {submission.comments && (
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground mb-1">Comments</p>
+                              <div className="bg-muted/20 p-3 rounded-md border border-border/50">
+                                <p className="whitespace-pre-line text-sm">{submission.comments}</p>
+                              </div>
+                            </div>
+                          )}
 
-        <TabsContent value="verification">{bounty && <VerificationPanel bounty={bounty} />}</TabsContent>
-      </Tabs>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full mt-2"
+                            onClick={() => {
+                              setSelectedSubmission(submission);
+                              setActiveTab("verification");
+                              const verificationTab = document.querySelector('[value="verification"]');
+                              if (verificationTab) {
+                                verificationTab.scrollIntoView({ behavior: 'smooth' });
+                              }
+                            }}
+                          >
+                            View Details
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="submit">
+              {bounty.status === 0 && !isCreator && connected && (
+                <div className="space-y-4">
+                  <CollapsibleSubmitProof
+                    bountyId={bounty.id.toString()}
+                    bountyTitle={bounty.title}
+                    isOpen={isSubmitProofOpen}
+                    setIsOpen={setIsSubmitProofOpen}
+                  />
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="verification">
+              {bounty && (
+                <div className="space-y-6">
+                  <VerificationPanel bounty={bounty} />
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       {bounty.completed && bounty.winner && (
-        <div className="border-t pt-8 mt-8">
-          <div className="flex items-center mb-4">
-            <Trophy className="h-6 w-6 text-yellow-500 mr-2" />
-            <h3 className="text-xl font-semibold">Winner</h3>
-          </div>
-          <Card className="border-green-200 bg-green-50/50 dark:bg-green-900/10 dark:border-green-900/50">
-            <CardContent className="p-4">
-              <div className="flex items-center">
-                <User className="h-5 w-5 text-green-600 mr-2" />
-                <p className="font-medium">{`${bounty.winner.substring(0, 6)}...${bounty.winner.substring(bounty.winner.length - 4)}`}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {bounty.submissions.length > 0 && selectedSubmission && (
-        <div className="border-t pt-8 mt-8">
-          <h3 className="text-xl font-semibold mb-4 flex items-center">
-            <span className="inline-block w-1 h-6 bg-primary mr-3 rounded"></span>
-            Detailed Submission View
-          </h3>
-          <SubmissionDetails
-            bountyId={bounty.id}
-            submission={{
-              ...selectedSubmission,
-              bountyTitle: bounty.title,
-              description: bounty.description,
-              reward: bounty.reward,
-              verifiers: [], // Add empty array as default
-            }}
-          />
-        </div>
+        <Card className="border-green-200 bg-green-50/50 dark:bg-green-900/10 dark:border-green-900/50">
+          <CardContent className="p-6">
+            <div className="flex items-center mb-4">
+              <Trophy className="h-6 w-6 text-yellow-500 mr-2" />
+              <h3 className="text-xl font-semibold">Winner</h3>
+            </div>
+            <div className="flex items-center">
+              <User className="h-5 w-5 text-green-600 mr-2" />
+              <p className="font-medium">{`${bounty.winner.substring(0, 6)}...${bounty.winner.substring(bounty.winner.length - 4)}`}</p>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )
