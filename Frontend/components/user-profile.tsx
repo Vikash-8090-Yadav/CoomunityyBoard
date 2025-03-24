@@ -16,7 +16,7 @@ import type { Bounty, Submission } from "@/types/bounty"
 
 export default function UserProfile() {
   const { connected, address } = useWallet()
-  const { getUserBounties, getUserSubmissions, getUserReputation } = useBounty()
+  const { getUserBounties, getUserSubmissions, getUserReputation, getBountyDetails } = useBounty()
 
   const [createdBounties, setCreatedBounties] = useState<Bounty[]>([])
   const [submissions, setSubmissions] = useState<Submission[]>([])
@@ -30,15 +30,39 @@ export default function UserProfile() {
       try {
         setLoading(true)
 
-        const [bounties, subs, rep] = await Promise.all([
-          getUserBounties(address),
-          getUserSubmissions(address),
-          getUserReputation(address),
-        ])
-
-        setCreatedBounties(bounties)
-        setSubmissions(subs)
+        // Get user's reputation
+        const rep = await getUserReputation(address)
         setReputation(rep)
+
+        // Get user's bounty IDs and fetch full details
+        const bountyIds = await getUserBounties(address)
+        const bounties = await Promise.all(
+          bountyIds.map(id => getBountyDetails(id))
+        )
+        setCreatedBounties(bounties)
+
+        // Get user's submission IDs and fetch full details
+        const submissionIds = await getUserSubmissions(address)
+        const subs = await Promise.all(
+          submissionIds.map(async (bountyId) => {
+            const bounty = await getBountyDetails(bountyId)
+            const submission = bounty.submissions.find(s => s.submitter.toLowerCase() === address.toLowerCase())
+            if (submission) {
+              const enrichedSubmission: Submission = {
+                ...submission,
+                bountyTitle: bounty.title,
+                reward: bounty.reward
+              }
+              return enrichedSubmission
+            }
+            return null
+          })
+        )
+        
+        // Filter out null values and set submissions
+        const validSubmissions = subs.filter((s): s is Submission => s !== null)
+        setSubmissions(validSubmissions)
+
       } catch (err) {
         console.error("Error fetching user data:", err)
       } finally {
@@ -47,7 +71,7 @@ export default function UserProfile() {
     }
 
     fetchUserData()
-  }, [connected, address, getUserBounties, getUserSubmissions, getUserReputation])
+  }, [connected, address, getUserBounties, getUserSubmissions, getUserReputation, getBountyDetails])
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleDateString()
@@ -82,8 +106,15 @@ export default function UserProfile() {
     completed: submissions.filter((s) => s.approved).length,
     pending: submissions.filter((s) => !s.approved).length,
     totalEarned: submissions
-      .filter((s) => s.approved)
-      .reduce((sum: number, sub: Submission) => sum + Number.parseFloat(formatEther(sub.reward)), 0),
+      .filter((s) => s.approved && s.reward)
+      .reduce((sum: number, sub: Submission) => {
+        try {
+          return sum + Number.parseFloat(formatEther(sub.reward || '0'))
+        } catch (e) {
+          console.error('Error formatting reward:', e)
+          return sum
+        }
+      }, 0),
   }
 
   if (!connected) {
@@ -241,7 +272,7 @@ export default function UserProfile() {
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center">
                         <Award className="mr-2 h-4 w-4" />
-                        <span>{formatEther(bounty.reward)} ETH</span>
+                        <span>{bounty.reward ? formatEther(bounty.reward) : '0'} ETH</span>
                       </div>
                       <div className="flex items-center">
                         <Calendar className="mr-2 h-4 w-4" />
@@ -287,7 +318,7 @@ export default function UserProfile() {
                     <div className="space-y-4">
                       <div className="flex items-center">
                         <Award className="mr-2 h-4 w-4" />
-                        <span className="text-sm">{formatEther(submission.reward)} ETH</span>
+                        <span className="text-sm">{submission.reward ? formatEther(submission.reward) : '0'} ETH</span>
                       </div>
                       <div className="flex items-center">
                         <Calendar className="mr-2 h-4 w-4" />
