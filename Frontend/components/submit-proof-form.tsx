@@ -107,6 +107,7 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
       const uploadedFiles = await Promise.all(
         files.map(async (file) => {
           const result = await pinataService.uploadFile(file)
+          console.log('File uploaded:', result)
           return {
             name: file.name,
             cid: result.cid,
@@ -125,15 +126,21 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
         links: links,
       }
 
+      console.log('Creating metadata:', metadata)
+
       // Upload metadata to Pinata
       const metadataCid = await pinataService.uploadJSON(metadata)
       console.log('Metadata uploaded to Pinata:', metadataCid)
 
+      // Ensure the CID is properly formatted (remove any 'ipfs://' prefix if present)
+      const cleanCid = metadataCid.replace('ipfs://', '')
+      console.log('Cleaned CID:', cleanCid)
+
       setUploading(false)
       setSubmitting(true)
 
-      // Submit proof to the blockchain with the new contract structure
-      await submitProof(Number(bountyId), metadataCid)
+      // Submit proof to the blockchain
+      await submitProof(Number(bountyId), cleanCid)
 
       // Reset form and show success message
       setFiles([])
@@ -142,7 +149,13 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
       setSuccess(true)
     } catch (error: unknown) {
       console.error("Error submitting proof:", error)
-      setError(error instanceof Error ? error.message : "Failed to submit proof")
+      // Extract more detailed error message if available
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : typeof error === 'object' && error !== null && 'message' in error
+          ? String(error.message)
+          : "Failed to submit proof"
+      setError(errorMessage)
       setUploading(false)
       setSubmitting(false)
     } finally {
@@ -163,7 +176,16 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
               Your proof has been submitted and is now awaiting verification by community members. 
               You can submit additional proofs if needed, and the bounty creator can choose any approved submission to complete the bounty.
             </p>
-            <Button variant="outline" onClick={() => window.location.reload()} className="mt-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                // Set the tab preference to details
+                localStorage.setItem('bounty-active-tab', 'details');
+                // Reload the page to show the new submission
+                window.location.reload();
+              }} 
+              className="mt-2"
+            >
               View Submission Status
             </Button>
           </div>
