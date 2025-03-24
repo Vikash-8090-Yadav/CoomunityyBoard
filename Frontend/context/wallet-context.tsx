@@ -88,25 +88,36 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connect = async () => {
-    if (!provider) {
-      console.error("No provider available");
-      return;
-    }
-
     try {
-      await (window as any).ethereum.request({ method: "eth_requestAccounts" });
+      // Check if MetaMask is installed
+      if (typeof window.ethereum === "undefined") {
+        throw new Error("Please install MetaMask to connect your wallet");
+      }
 
-      const network = await provider.getNetwork();
+      // Initialize provider if not already done
+      if (!provider) {
+        const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+        setProvider(web3Provider);
+      }
+
+      // Request account access
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+
+      const currentProvider = provider || new ethers.providers.Web3Provider(window.ethereum);
+      const network = await currentProvider.getNetwork();
+
+      // Check and switch to Conflux Testnet if needed
       if (network.chainId !== 71) {
         try {
-          await (window as any).ethereum.request({
+          await window.ethereum.request({
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: '0x47' }],
           });
         } catch (switchError: any) {
+          // If the chain hasn't been added to MetaMask
           if (switchError.code === 4902) {
             try {
-              await (window as any).ethereum.request({
+              await window.ethereum.request({
                 method: 'wallet_addEthereumChain',
                 params: [{
                   chainId: '0x47',
@@ -121,28 +132,39 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 }],
               });
             } catch (addError) {
-              console.error('Error adding Conflux Testnet:', addError);
+              throw new Error('Failed to add Conflux Testnet to your wallet. Please try adding it manually.');
             }
           }
-          console.error('Failed to switch to Conflux Testnet:', switchError);
+          throw new Error('Failed to switch to Conflux Testnet. Please switch networks manually.');
         }
       }
 
-      const ethSigner = provider.getSigner();
+      // Get signer and address
+      const ethSigner = currentProvider.getSigner();
       const userAddress = await ethSigner.getAddress();
-      const currentNetwork = await provider.getNetwork();
+      const updatedNetwork = await currentProvider.getNetwork();
 
+      // Update state
       setSigner(ethSigner);
       setAddress(userAddress);
       setConnected(true);
-      setChainId(currentNetwork.chainId);
+      setChainId(updatedNetwork.chainId);
 
-      console.log("Connected to wallet on network:", {
-        chainId: currentNetwork.chainId,
-        name: currentNetwork.name
+      console.log("Successfully connected to wallet on network:", {
+        chainId: updatedNetwork.chainId,
+        name: updatedNetwork.name
       });
-    } catch (error) {
-      console.error("Failed to connect wallet:", error);
+
+    } catch (error: any) {
+      console.error("Wallet connection error:", error);
+      // Reset state on error
+      setSigner(null);
+      setAddress("");
+      setConnected(false);
+      setChainId(null);
+      
+      // Throw a user-friendly error message
+      throw new Error(error.message || "Failed to connect wallet. Please try again.");
     }
   };
 
