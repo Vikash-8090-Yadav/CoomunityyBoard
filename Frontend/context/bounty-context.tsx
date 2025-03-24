@@ -20,9 +20,14 @@ export interface Submission {
   timestamp: number;
   approved: boolean;
   approvalCount: number;
+  rejectCount: number;
+  isWinner: boolean;
+  rewardShare: number;
   hasVoted?: boolean;
   proofCID?: string;
   comments?: string;
+  txHash: string;
+  payoutTxHash?: string;
 }
 
 export interface Bounty {
@@ -35,11 +40,10 @@ export interface Bounty {
   rewardToken: string;
   deadline: number;
   completed: boolean;
-  winner: string;
+  winnerCount: number;
   submissionCount: number;
   submissions: Submission[];
   status: number;
-  minimumApprovals: number;
 }
 
 interface ContractSubmission {
@@ -70,14 +74,17 @@ interface BountyContextType {
   error: string | null;
   account: string | null;
   connectWallet: () => Promise<void>;
-  createBounty: (title: string, description: string, proofRequirements: string, reward: number, deadline: number) => Promise<void>;
+  createBounty: (title: string, description: string, proofRequirements: string, reward: number, rewardToken: string, deadline: number) => Promise<void>;
   submitProof: (bountyId: number, proofHash: string) => Promise<void>;
-  verifySubmission: (bountyId: number, submissionId: number) => Promise<void>;
+  verifySubmission: (bountyId: number, submissionId: number, approve: boolean) => Promise<void>;
   completeAndPayBounty: (bountyId: number, submissionId: number) => Promise<void>;
   getBountyDetails: (bountyId: number) => Promise<Bounty>;
   getUserBounties: (address: string) => Promise<number[]>;
   getUserSubmissions: (address: string) => Promise<number[]>;
-  voteOnSubmission: (bountyId: number, submissionId: number) => Promise<void>;
+  voteOnSubmission: (bountyId: number, submissionId: number, approve: boolean) => Promise<void>;
+  completeBounty: (bountyId: number) => Promise<void>;
+  hasVotedOnSubmission: (bountyId: number, submissionId: number, userAddress: string) => Promise<boolean>;
+  getUserReputation: (address: string) => Promise<number>;
 }
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
@@ -131,7 +138,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         const newSigner = provider.getSigner();
         setSigner(newSigner);
         setAccount(accounts[0]);
-      } else {
+    } else {
         setSigner(null);
         setAccount(null);
       }
@@ -189,6 +196,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     description: string,
     proofRequirements: string,
     reward: number,
+    rewardToken: string,
     deadline: number
   ) => {
     if (!signer) throw new Error("Please connect your wallet");
@@ -205,9 +213,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         description,
         proofRequirements,
         value,
-        ethers.constants.AddressZero,
+        rewardToken || ethers.constants.AddressZero,
         BigInt(deadline),
-        { value }
+        { value: rewardToken === ethers.constants.AddressZero ? value : 0 }
       );
 
       await tx.wait();
@@ -271,20 +279,64 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setError(null);
 
       const contract = getSignedContract();
+      const userAddress = await signer.getAddress();
+      console.log("Submitting proof for bounty:", bountyId);
+      console.log("User address:", userAddress);
+      
+      // Check if bounty exists and is active
+      const bounty = await contract.bounties(bountyId);
+      console.log("Bounty details:", bounty);
+      
+      if (!bounty) {
+        throw new Error("Bounty does not exist");
+      }
+
+      if (bounty.completed) {
+        throw new Error("Bounty is already completed");
+      }
+
+      const currentTime = Math.floor(Date.now() / 1000);
+      if (currentTime > bounty.deadline.toNumber()) {
+        throw new Error("Bounty deadline has passed");
+      }
+
+      // Check if user has already submitted
+      const hasSubmitted = await contract.hasSubmitted(bountyId, userAddress);
+      if (hasSubmitted) {
+        throw new Error("You have already submitted a proof for this bounty");
+      }
+
+      // Submit the proof
       const tx = await contract.submitProof(bountyId, proofHash);
-      await tx.wait();
+      console.log("Transaction sent:", tx.hash);
+      const receipt = await tx.wait();
+      console.log("Transaction confirmed:", receipt);
+      
+      if (receipt.status === 0) {
+        throw new Error("Transaction failed");
+      }
+
       await fetchAllBounties();
-    } catch (err: any) {
-      console.error("Error submitting proof:", err);
-      setError(err.message);
-      throw err;
+    } catch (error: any) {
+      console.error('Error submitting proof:', error);
+      if (error.message?.includes('Already submitted a proof')) {
+        throw new Error('You have already submitted a proof for this bounty');
+      } else if (error.message?.includes('Bounty deadline has passed')) {
+        throw new Error('The bounty deadline has passed');
+      } else if (error.message?.includes('Bounty already completed')) {
+        throw new Error('This bounty has already been completed');
+      } else if (error.message?.includes('Invalid proof hash length')) {
+        throw new Error('Invalid proof hash format');
+      } else {
+        throw new Error('Failed to submit proof. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   // Verify submission
-  const verifySubmission = async (bountyId: number, submissionId: number) => {
+  const verifySubmission = async (bountyId: number, submissionId: number, approve: boolean) => {
     if (!signer) throw new Error("Please connect your wallet");
 
     try {
@@ -292,7 +344,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setError(null);
 
       const contract = getSignedContract();
-      const tx = await contract.verifySubmission(bountyId, submissionId);
+      const tx = await contract.approveSubmission(bountyId, submissionId, approve);
       await tx.wait();
       await fetchAllBounties();
     } catch (err: any) {
@@ -332,105 +384,61 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('Fetching bounty details for ID:', bountyId);
       
-      // Get bounty details
-      const details = await contract.getBountyDetails(bountyId);
+      const details = await contract.bounties(bountyId);
       console.log('Raw bounty details:', details);
 
-      // Destructure the response, handling both array and object formats
-      let creator, title, description, proofRequirements, reward, rewardToken, 
-          deadline, completed, winner, submissionCount, status, minimumApprovals;
-
-      if (Array.isArray(details)) {
-        [
-          creator,
-          title,
-          description,
-          proofRequirements,
-          reward,
-          rewardToken,
-          deadline,
-          completed,
-          winner,
-          submissionCount,
-          status,
-          minimumApprovals
-        ] = details;
-      } else {
-        // Handle object format if contract returns named properties
-        ({
-          creator,
-          title,
-          description,
-          proofRequirements,
-          reward,
-          rewardToken,
-          deadline,
-          completed,
-          winner,
-          submissionCount,
-          status = 0, // Default to 0 (Active) if not provided
-          minimumApprovals = 3 // Default to 3 if not provided
-        } = details);
-      }
-      
       // Get submissions
       const submissions: Submission[] = [];
-      const submissionCountNum = submissionCount ? submissionCount.toNumber() : 0;
+      const submissionCount = details.submissionCount.toNumber();
       
-      for (let i = 0; i < submissionCountNum; i++) {
-        const submission = await contract.getSubmission(bountyId, i);
-        console.log(`Raw submission ${i}:`, submission);
+      for (let i = 0; i < submissionCount; i++) {
+        const [
+          submitter,
+          ipfsProofHash,
+          timestamp,
+          approved,
+          approvalCount,
+          rejectCount,
+          isWinner,
+          rewardShare,
+          txHash,
+          payoutTxHash
+        ] = await contract.getSubmission(bountyId, i);
 
-        let submitter, ipfsProofHash, timestamp, approved, approvalCount;
-
-        if (Array.isArray(submission)) {
-          [submitter, ipfsProofHash, timestamp, approved, approvalCount] = submission;
-        } else {
-          ({
-            submitter,
-            ipfsProofHash,
-            timestamp,
-            approved,
-            approvalCount
-          } = submission);
-        }
-
-        let hasVoted = false;
-        if (account) {
-          hasVoted = await contract.hasVotedOnSubmission(bountyId, i, account);
-        }
+        const hasVoted = account ? await contract.hasVotedOnSubmission(bountyId, i, account) : false;
 
         submissions.push({
           id: i,
           bountyId,
           submitter,
           ipfsProofHash,
-          timestamp: timestamp ? timestamp.toNumber() : Math.floor(Date.now() / 1000),
-          approved: approved || false,
-          approvalCount: approvalCount ? approvalCount.toNumber() : 0,
-          hasVoted
+          timestamp: Number(timestamp),
+          approved,
+          approvalCount: Number(approvalCount),
+          rejectCount: Number(rejectCount),
+          isWinner,
+          rewardShare: Number(rewardShare),
+          hasVoted,
+          txHash,
+          payoutTxHash
         });
       }
 
-      const bounty = {
+      return {
         id: bountyId,
-        creator: creator || ethers.constants.AddressZero,
-        title: title || "",
-        description: description || "",
-        proofRequirements: proofRequirements || "",
-        reward: reward || BigInt(0),
-        rewardToken: rewardToken || ethers.constants.AddressZero,
-        deadline: deadline ? deadline.toNumber() : Math.floor(Date.now() / 1000),
-        completed: completed || false,
-        winner: winner || ethers.constants.AddressZero,
-        submissionCount: submissionCountNum,
+        creator: details.creator,
+        title: details.title,
+        description: details.description,
+        proofRequirements: details.proofRequirements,
+        reward: details.reward,
+        rewardToken: details.rewardToken,
+        deadline: details.deadline.toNumber(),
+        completed: details.completed,
+        winnerCount: details.winnerCount.toNumber(),
+        submissionCount,
         submissions,
-        status: status ? (typeof status === 'number' ? status : status.toNumber()) : 0,
-        minimumApprovals: minimumApprovals ? (typeof minimumApprovals === 'number' ? minimumApprovals : minimumApprovals.toNumber()) : 3
+        status: details.completed ? 1 : 0
       };
-
-      console.log('Processed bounty:', bounty);
-      return bounty;
     } catch (err: any) {
       console.error(`Error fetching bounty ${bountyId}:`, err);
       throw err;
@@ -440,19 +448,19 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   // Get user's bounties
   const getUserBounties = async (userAddress: string): Promise<number[]> => {
     const contract = getReadOnlyContract();
-    const bounties = await contract.getUserBounties([userAddress]) as bigint[];
+    const bounties = await contract.getUserBounties(userAddress) as bigint[];
     return bounties.map(Number);
   };
 
   // Get user's submissions
   const getUserSubmissions = async (userAddress: string): Promise<number[]> => {
     const contract = getReadOnlyContract();
-    const submissions = await contract.getUserSubmissions([userAddress]) as bigint[];
+    const submissions = await contract.getUserSubmissions(userAddress) as bigint[];
     return submissions.map(Number);
   };
 
   // Vote on submission
-  const voteOnSubmission = async (bountyId: number, submissionId: number) => {
+  const voteOnSubmission = async (bountyId: number, submissionId: number, approve: boolean) => {
     if (!signer) throw new Error("Please connect your wallet");
 
     try {
@@ -460,8 +468,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setError(null);
 
       const contract = getSignedContract();
-      console.log(`Voting on submission ${submissionId} for bounty ${bountyId}`);
-      const tx = await contract.voteOnSubmission(bountyId, submissionId);
+      const tx = await contract.voteOnSubmission(bountyId, submissionId, approve);
       await tx.wait();
       await fetchAllBounties();
     } catch (err: any) {
@@ -470,6 +477,45 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       throw err;
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Complete bounty
+  const completeBounty = async (bountyId: number) => {
+    if (!signer) throw new Error("Please connect your wallet");
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const contract = getSignedContract();
+      const tx = await contract.completeBounty(bountyId);
+      await tx.wait();
+      await fetchAllBounties();
+    } catch (err: any) {
+      console.error("Error completing bounty:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Check if user has voted on submission
+  const hasVotedOnSubmission = async (bountyId: number, submissionId: number, userAddress: string): Promise<boolean> => {
+    const contract = getReadOnlyContract();
+    return contract.hasVotedOnSubmission(bountyId, submissionId, userAddress);
+  };
+
+  // Get user's reputation
+  const getUserReputation = async (address: string): Promise<number> => {
+    const contract = getReadOnlyContract();
+    try {
+      const reputation = await contract.userReputation(address);
+      return Number(reputation);
+    } catch (err: any) {
+      console.error("Error fetching user reputation:", err);
+      throw err;
     }
   };
 
@@ -489,6 +535,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         getUserBounties,
         getUserSubmissions,
         voteOnSubmission,
+        completeBounty,
+        hasVotedOnSubmission,
+        getUserReputation,
       }}
     >
       {children}
