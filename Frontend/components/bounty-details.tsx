@@ -17,7 +17,9 @@ import { formatDistanceToNow } from "date-fns"
 import type { Bounty, Submission } from "@/types/bounty"
 import CollapsibleSubmitProof from "./collapsible-submit-proof"
 import { useAccount } from "@/context/account-context"
-import { contract } from "@/lib/contract"
+import { ethers } from "ethers"
+import abi from "@/abi/CommunityBountyBoard.json"
+import { communityAddress } from "@/config"
 
 interface BountyDetailsProps {
   id: string
@@ -28,6 +30,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
   const { connected, address, chainId } = useWallet()
   const { getBountyDetails } = useBounty()
   const { address: accountAddress } = useAccount()
+  const { provider } = useWallet()
 
   const [bounty, setBounty] = useState<Bounty | null>(null)
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null)
@@ -73,34 +76,48 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
 
   useEffect(() => {
     const checkVoteStatus = async () => {
-      if (!accountAddress || !bounty || !selectedSubmission) return;
-      
+      if (!bounty || !selectedSubmission || !accountAddress || !provider) return;
+
+      setIsLoadingVoteStatus(true);
       try {
+        const contract = new ethers.Contract(
+          communityAddress,
+          abi.abi,
+          provider
+        );
+
         const voted = await contract.hasVotedOnSubmission(bounty.id, selectedSubmission.id, accountAddress);
         setHasVoted(voted);
       } catch (error) {
-        console.error('Error checking vote status:', error);
+        console.error("Error checking vote status:", error);
       } finally {
         setIsLoadingVoteStatus(false);
       }
     };
 
-    const getPayoutTxHash = async () => {
-      if (!bounty || !selectedSubmission || !selectedSubmission.isWinner) return;
-      
+    const fetchPayoutHash = async () => {
+      if (!bounty || !selectedSubmission || !provider) return;
+
       try {
+        const contract = new ethers.Contract(
+          communityAddress,
+          abi.abi,
+          provider
+        );
+
         const hash = await contract.getPayoutTxHash(bounty.id, selectedSubmission.id);
         if (hash && hash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
           setPayoutTxHash(hash);
         }
       } catch (error) {
-        console.error('Error getting payout transaction hash:', error);
+        console.error("Error fetching payout hash:", error);
+        // Don't set error state here as it's not critical
       }
     };
 
     checkVoteStatus();
-    getPayoutTxHash();
-  }, [accountAddress, bounty, selectedSubmission]);
+    fetchPayoutHash();
+  }, [accountAddress, bounty, selectedSubmission, provider]);
 
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleDateString()
@@ -179,7 +196,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
     )
   }
 
-  if (loading) {
+  if (loading && activeTab !== "submit") {
     return (
       <Card className="border-muted">
         <CardContent className="flex flex-col items-center justify-center p-12">
