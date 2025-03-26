@@ -75,13 +75,13 @@ interface BountyContextType {
   account: string | null;
   connectWallet: () => Promise<void>;
   createBounty: (title: string, description: string, proofRequirements: string, reward: number, rewardToken: string, deadline: number) => Promise<void>;
-  submitProof: (bountyId: number, proofHash: string) => Promise<void>;
+  submitProof: (bountyId: number, proofHash: string) => Promise<ethers.ContractTransaction>;
   verifySubmission: (bountyId: number, submissionId: number, approve: boolean) => Promise<void>;
   completeAndPayBounty: (bountyId: number, submissionId: number) => Promise<void>;
   getBountyDetails: (bountyId: number) => Promise<Bounty>;
   getUserBounties: (address: string) => Promise<number[]>;
   getUserSubmissions: (address: string) => Promise<number[]>;
-  voteOnSubmission: (bountyId: number, submissionId: number, approve: boolean) => Promise<void>;
+  voteOnSubmission: (bountyId: number, submissionId: number, approve: boolean) => Promise<ethers.ContractTransaction>;
   completeBounty: (bountyId: number) => Promise<void>;
   hasVotedOnSubmission: (bountyId: number, submissionId: number, userAddress: string) => Promise<boolean>;
   getUserReputation: (address: string) => Promise<number>;
@@ -306,17 +306,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error("You have already submitted a proof for this bounty");
       }
 
-      // Submit the proof
+      // Submit the proof and return the transaction
       const tx = await contract.submitProof(bountyId, proofHash);
       console.log("Transaction sent:", tx.hash);
-      const receipt = await tx.wait();
-      console.log("Transaction confirmed:", receipt);
-      
-      if (receipt.status === 0) {
-        throw new Error("Transaction failed");
-      }
-
-      await fetchAllBounties();
+      return tx;
     } catch (error: any) {
       console.error('Error submitting proof:', error);
       if (error.message?.includes('Already submitted a proof')) {
@@ -462,21 +455,14 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   // Vote on submission
   const voteOnSubmission = async (bountyId: number, submissionId: number, approve: boolean) => {
     if (!signer) throw new Error("Please connect your wallet");
-
+    
     try {
-      setLoading(true);
-      setError(null);
-
       const contract = getSignedContract();
       const tx = await contract.voteOnSubmission(bountyId, submissionId, approve);
-      await tx.wait();
-      await fetchAllBounties();
+      return tx;
     } catch (err: any) {
       console.error("Error voting on submission:", err);
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
+      throw new Error(err.message || "Failed to vote on submission");
     }
   };
 
