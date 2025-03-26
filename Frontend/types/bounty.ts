@@ -8,6 +8,7 @@ export interface Submission {
   approvalCount: number
   rejectCount: number
   isWinner: boolean
+  rewardAmount: string
   rewardShare: number
   hasVoted?: boolean
   txHash?: string
