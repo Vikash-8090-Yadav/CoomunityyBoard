@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 contract CommunityBountyBoard is Ownable, ReentrancyGuard {
-    using SafeERC20 for IERC20;
-    
     // Constants
     uint256 public constant BLOCKS_PER_DAY = 7200; // Assuming 12 seconds per block
     uint256 public constant TOTAL_VOTES = 3;
@@ -22,7 +18,7 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
         uint256 approvalCount;
         uint256 rejectCount;
         bool isWinner;
-        uint256 rewardShare;
+        uint256 rewardAmount; // Custom reward amount for this submission
         mapping(address => bool) hasVoted;
     }
 
@@ -33,7 +29,6 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
         string description;
         string proofRequirements;
         uint256 reward;
-        address rewardToken;
         uint256 deadline;
         bool completed;
         uint256 winnerCount;
@@ -69,11 +64,11 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
         string memory _description,
         string memory _proofRequirements,
         uint256 _reward,
-        address _rewardToken,
         uint256 _deadline
     ) external payable returns (uint256) {
         require(_deadline > block.timestamp, "Deadline must be in the future");
         require(_reward > 0, "Reward must be greater than 0");
+        require(msg.value == _reward, "Must send exact reward amount");
 
         uint256 bountyId = bountyCount++;
         Bounty storage newBounty = bounties[bountyId];
@@ -84,18 +79,11 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
         newBounty.description = _description;
         newBounty.proofRequirements = _proofRequirements;
         newBounty.reward = _reward;
-        newBounty.rewardToken = _rewardToken;
         newBounty.deadline = _deadline;
         newBounty.submissionCount = 0;
         newBounty.winnerCount = 0;
 
         userBounties[msg.sender].push(bountyId);
-
-        if (_rewardToken == address(0)) {
-            require(msg.value == _reward, "Must send exact reward amount");
-        } else {
-            IERC20(_rewardToken).safeTransferFrom(msg.sender, address(this), _reward);
-        }
 
         emit BountyCreated(bountyId, msg.sender, _title, _reward);
         return bountyId;
@@ -118,7 +106,7 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
         submission.approvalCount = 0;
         submission.rejectCount = 0;
         submission.isWinner = false;
-        submission.rewardShare = 0;
+        submission.rewardAmount = 0;
 
         hasSubmitted[_bountyId][msg.sender] = true;
         userSubmissions[msg.sender].push(_bountyId);
@@ -135,7 +123,6 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
         require(!bounty.completed, "Bounty already completed");
         require(!submission.hasVoted[msg.sender], "Already voted");
         require(msg.sender != submission.submitter, "Cannot vote on own submission");
-        require(submission.approvalCount + submission.rejectCount < TOTAL_VOTES, "Maximum votes reached");
 
         submission.hasVoted[msg.sender] = true;
         
@@ -148,85 +135,77 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
             emit SubmissionRejected(_bountyId, _submissionId, submission.submitter);
         }
 
-        if (submission.approvalCount + submission.rejectCount == TOTAL_VOTES) {
-            determineWinner(_bountyId, _submissionId);
-        }
-    }
-
-    // Determine if a submission is a winner
-    function determineWinner(uint256 _bountyId, uint256 _submissionId) internal {
-        Bounty storage bounty = bounties[_bountyId];
-        Submission storage submission = bounty.submissions[_submissionId];
-
+        // Determine winner immediately if approval count exceeds reject count
         if (submission.approvalCount > submission.rejectCount) {
             submission.isWinner = true;
-            bounty.winnerCount++;
             submission.approved = true;
         } else {
+            submission.isWinner = false;
             submission.approved = false;
         }
     }
 
-    // Complete bounty and distribute rewards
-    function completeBounty(uint256 _bountyId) external nonReentrant {
+    // Set reward amount for a submission and send payout immediately
+    function setSubmissionReward(uint256 _bountyId, uint256 _submissionId, uint256 _rewardAmount) external payable nonReentrant {
+        Bounty storage bounty = bounties[_bountyId];
+        require(msg.sender == bounty.creator, "Only bounty creator can set rewards");
+        require(!bounty.completed, "Bounty already completed");
+        require(block.timestamp > bounty.deadline, "Cannot set reward before deadline");
+        require(_submissionId < bounty.submissionCount, "Invalid submission ID");
+        require(_rewardAmount > 0, "Reward must be greater than 0");
+        require(_rewardAmount <= bounty.reward, "Reward cannot exceed bounty amount");
+        require(msg.value == _rewardAmount, "Must send exact reward amount");
+
+        Submission storage submission = bounty.submissions[_submissionId];
+        require(submission.approved, "Can only set reward for approved submissions");
+        require(submission.rewardAmount == 0, "Reward already set for this submission");
+        
+        // Set reward amount
+        submission.rewardAmount = _rewardAmount;
+
+        // Transfer reward to winner
+        (bool success, ) = payable(submission.submitter).call{value: _rewardAmount}("");
+        require(success, "Transfer failed");
+
+        // Update bounty state
+        bounty.reward -= _rewardAmount;
+
+        // Check if all approved submissions have received rewards
+        bool allApprovedRewarded = true;
+        for (uint256 i = 0; i < bounty.submissionCount; i++) {
+            Submission storage s = bounty.submissions[i];
+            if (s.approved && s.rewardAmount == 0) {
+                allApprovedRewarded = false;
+                break;
+            }
+        }
+
+        // Only complete the bounty if all approved submissions have received rewards
+        if (allApprovedRewarded) {
+            // If there's remaining reward, return it to the creator
+            if (bounty.reward > 0) {
+                (bool success, ) = payable(bounty.creator).call{value: bounty.reward}("");
+                require(success, "Return transfer failed");
+                bounty.reward = 0;
+            }
+
+            // Mark bounty as completed
+            bounty.completed = true;
+            emit BountyCompleted(_bountyId, 1);
+        }
+
+        emit PayoutSent(_bountyId, _submissionId, submission.submitter, _rewardAmount, "");
+    }
+
+    // Complete bounty - only changes status
+    function completeBounty(uint256 _bountyId) external {
         Bounty storage bounty = bounties[_bountyId];
         require(!bounty.completed, "Bounty already completed");
         require(block.timestamp > bounty.deadline, "Bounty deadline not reached");
-
-        uint256 totalWinners = 0;
-        for (uint256 i = 0; i < bounty.submissionCount; i++) {
-            if (bounty.submissions[i].isWinner) {
-                totalWinners++;
-            }
-        }
-
-        require(totalWinners > 0, "No winners found");
-
-        // Calculate reward share for each winner
-        uint256 rewardShare = bounty.reward / totalWinners;
-        uint256 remainder = bounty.reward % totalWinners;
-
-        // Distribute rewards
-        for (uint256 i = 0; i < bounty.submissionCount; i++) {
-            Submission storage submission = bounty.submissions[i];
-            if (submission.isWinner) {
-                uint256 finalShare = rewardShare;
-                if (remainder > 0) {
-                    finalShare++;
-                    remainder--;
-                }
-
-                bytes32 payoutTxHash = keccak256(abi.encodePacked(
-                    _bountyId,
-                    i,
-                    submission.submitter,
-                    finalShare,
-                    block.timestamp
-                ));
-                string memory payoutTxHashStr = string(abi.encodePacked("0x", toAsciiString(payoutTxHash)));
-                payoutTxHashes[_bountyId][i] = payoutTxHashStr;
-
-                // Update reputation before transfer
-                userReputation[submission.submitter] += 10;
-                emit ReputationUpdated(submission.submitter, userReputation[submission.submitter]);
-
-                if (bounty.rewardToken == address(0)) {
-                    (bool success, ) = payable(submission.submitter).call{value: finalShare}("");
-                    require(success, "Transfer failed");
-                } else {
-                    IERC20(bounty.rewardToken).safeTransfer(submission.submitter, finalShare);
-                }
-
-                emit PayoutSent(_bountyId, i, submission.submitter, finalShare, payoutTxHashStr);
-            }
-        }
-
-        // Update creator's reputation
-        userReputation[bounty.creator] += 5;
-        emit ReputationUpdated(bounty.creator, userReputation[bounty.creator]);
+        require(msg.sender == bounty.creator, "Only bounty creator can complete bounty");
 
         bounty.completed = true;
-        emit BountyCompleted(_bountyId, totalWinners);
+        emit BountyCompleted(_bountyId, 0);
     }
 
     // Helper function to get transaction hash
@@ -271,7 +250,7 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
         uint256 approvalCount,
         uint256 rejectCount,
         bool isWinner,
-        uint256 rewardShare,
+        uint256 rewardAmount,
         string memory txHash,
         string memory payoutTxHash
     ) {
@@ -280,7 +259,7 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
         // Get submission data in chunks to avoid stack too deep
         (submitter, ipfsProofHash, timestamp) = getSubmissionBasicInfo(_bountyId, _submissionId);
         (approved, approvalCount, rejectCount) = getSubmissionVoteInfo(_bountyId, _submissionId);
-        (isWinner, rewardShare) = getSubmissionStatus(_bountyId, _submissionId);
+        (isWinner, rewardAmount) = getSubmissionStatus(_bountyId, _submissionId);
         txHash = submissionTxHashes[_bountyId][_submissionId];
         payoutTxHash = payoutTxHashes[_bountyId][_submissionId];
     }
@@ -316,12 +295,12 @@ contract CommunityBountyBoard is Ownable, ReentrancyGuard {
     // Helper function to get submission status
     function getSubmissionStatus(uint256 _bountyId, uint256 _submissionId) internal view returns (
         bool isWinner,
-        uint256 rewardShare
+        uint256 rewardAmount
     ) {
         Submission storage submission = bounties[_bountyId].submissions[_submissionId];
         return (
             submission.isWinner,
-            submission.rewardShare
+            submission.rewardAmount
         );
     }
 
