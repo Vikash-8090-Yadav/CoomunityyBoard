@@ -15,6 +15,8 @@ import { uploadToIPFS, uploadJSONToIPFS, getIPFSGatewayURL } from "@/lib/ipfs"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { pinataService } from '@/lib/pinata'
+import { useToast } from "@/components/ui/use-toast"
+import { TransactionProgress } from "@/components/ui/transaction-progress"
 
 interface ProofMetadata {
   title: string
@@ -31,27 +33,17 @@ interface ProofMetadata {
 
 export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: string; bountyTitle: string }) {
   const { connected, address } = useWallet()
-  const { submitProof, getBountyDetails } = useBounty()
-  const [bountyDetails, setBountyDetails] = useState<any>(null)
-
-  useEffect(() => {
-    const fetchBountyDetails = async () => {
-      if (bountyId) {
-        const details = await getBountyDetails(Number(bountyId))
-        setBountyDetails(details)
-      }
-    }
-    fetchBountyDetails()
-  }, [bountyId, getBountyDetails])
+  const { submitProof } = useBounty()
+  const { toast } = useToast()
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [transactionStage, setTransactionStage] = useState<"submitted" | "pending" | "confirmed" | "error">("submitted")
+  const [transactionError, setTransactionError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
 
   const [comments, setComments] = useState("")
   const [files, setFiles] = useState<File[]>([])
   const [links, setLinks] = useState<string[]>([])
   const [newLink, setNewLink] = useState("")
-  const [uploading, setUploading] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,13 +58,12 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
 
   const addLink = () => {
     if (newLink.trim() !== "") {
-      // Basic URL validation
       try {
         new URL(newLink)
         setLinks((prev) => [...prev, newLink])
         setNewLink("")
       } catch (e) {
-        setError("Please enter a valid URL")
+        setTransactionError("Please enter a valid URL")
       }
     }
   }
@@ -83,31 +74,33 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     if (!connected) {
-      setError("Please connect your wallet first")
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      })
       return
     }
 
     if (files.length === 0 && links.length === 0) {
-      setError("Please upload at least one file or add a link as proof")
-      return
-    }
-
-    if (bountyDetails && bountyDetails.status === 'Completed') {
-      setError("This bounty has already been completed")
+      toast({
+        title: "Error",
+        description: "Please upload at least one file or add a link as proof",
+        variant: "destructive",
+      })
       return
     }
 
     try {
-      setUploading(true)
-      setError("")
+      setIsSubmitting(true)
+      setTransactionStage("submitted")
+      setTransactionError(null)
 
       // Upload files to Pinata
       const uploadedFiles = await Promise.all(
         files.map(async (file) => {
           const result = await pinataService.uploadFile(file)
-          console.log('File uploaded:', result)
           return {
             name: file.name,
             cid: result.cid,
@@ -126,41 +119,60 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
         links: links,
       }
 
-      console.log('Creating metadata:', metadata)
-
       // Upload metadata to Pinata
       const metadataCid = await pinataService.uploadJSON(metadata)
-      console.log('Metadata uploaded to Pinata:', metadataCid)
-
-      // Ensure the CID is properly formatted (remove any 'ipfs://' prefix if present)
       const cleanCid = metadataCid.replace('ipfs://', '')
-      console.log('Cleaned CID:', cleanCid)
-
-      setUploading(false)
-      setSubmitting(true)
 
       // Submit proof to the blockchain
-      await submitProof(Number(bountyId), cleanCid)
+      const tx = await submitProof(Number(bountyId), cleanCid)
+      setTransactionStage("pending")
 
-      // Reset form and show success message
-      setFiles([])
-      setLinks([])
-      setComments("")
+      // Wait for transaction to be mined
+      await tx.wait()
+      setTransactionStage("confirmed")
+
+      // Wait a moment to show the confirmed state
+      await new Promise(resolve => setTimeout(resolve, 1500))
+
+      // Instead of refreshing, just show success state
       setSuccess(true)
-    } catch (error: unknown) {
+
+      // Automatically navigate to details tab after showing success message
+      setTimeout(() => {
+        // Set the tab preference to details
+        localStorage.setItem('bounty-active-tab', 'details');
+        // Refresh the page to show updated data
+        window.location.reload();
+      }, 2000); // Wait 2 seconds to show success message before refreshing
+
+    } catch (error: any) {
       console.error("Error submitting proof:", error)
-      // Extract more detailed error message if available
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : typeof error === 'object' && error !== null && 'message' in error
-          ? String(error.message)
-          : "Failed to submit proof"
-      setError(errorMessage)
-      setUploading(false)
-      setSubmitting(false)
+      setTransactionStage("error")
+      setTransactionError(error.message || "Failed to submit proof")
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit proof. Please try again.",
+        variant: "destructive",
+      })
     } finally {
-      setSubmitting(false)
+      setIsSubmitting(false)
     }
+  }
+
+  // Show loading state while transaction is pending
+  if (isSubmitting) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="text-center py-6">
+            <TransactionProgress 
+              stage={transactionStage} 
+              errorMessage={transactionError || undefined}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (success) {
@@ -173,21 +185,11 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
             </div>
             <h3 className="text-xl font-medium mb-2">Proof Submitted Successfully!</h3>
             <p className="text-muted-foreground mb-4">
-              Your proof has been submitted and is now awaiting verification by community members. 
-              You can submit additional proofs if needed, and the bounty creator can choose any approved submission to complete the bounty.
+              Your proof has been submitted and is now awaiting verification by community members.
             </p>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                // Set the tab preference to details
-                localStorage.setItem('bounty-active-tab', 'details');
-                // Reload the page to show the new submission
-                window.location.reload();
-              }} 
-              className="mt-2"
-            >
-              View Submission Status
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              Redirecting to submission details...
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -225,7 +227,7 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
                     multiple
                     onChange={handleFileChange}
                     className="hidden"
-                    disabled={uploading || submitting}
+                    disabled={isSubmitting}
                   />
                 </div>
 
@@ -263,9 +265,9 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
                     placeholder="https://example.com/my-work"
                     value={newLink}
                     onChange={(e) => setNewLink(e.target.value)}
-                    disabled={uploading || submitting}
+                    disabled={isSubmitting}
                   />
-                  <Button type="button" onClick={addLink} disabled={uploading || submitting || !newLink.trim()}>
+                  <Button type="button" onClick={addLink} disabled={isSubmitting || !newLink.trim()}>
                     Add
                   </Button>
                 </div>
@@ -310,27 +312,22 @@ export default function SubmitProofForm({ bountyId, bountyTitle }: { bountyId: s
               rows={4}
               value={comments}
               onChange={(e) => setComments(e.target.value)}
-              disabled={uploading || submitting}
+              disabled={isSubmitting}
             />
           </div>
 
-          {error && (
+          {transactionError && (
             <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription>{transactionError}</AlertDescription>
             </Alert>
           )}
 
           <Button
             type="submit"
             className="w-full"
-            disabled={!connected || (files.length === 0 && links.length === 0) || uploading || submitting}
+            disabled={!connected || (files.length === 0 && links.length === 0) || isSubmitting}
           >
-            {uploading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Uploading to Pinata...
-              </>
-            ) : submitting ? (
+            {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Submitting Proof...
