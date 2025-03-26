@@ -30,6 +30,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import type { Bounty, Submission, ProofMetadata, PinataFileResponse } from "@/types/bounty"
 import { ethers } from "ethers"
+import { useToast } from "@/components/ui/use-toast"
+import { TransactionProgress } from "@/components/ui/transaction-progress"
+import abi from "@/abi/CommunityBountyBoard.json"
+import { communityAddress } from "@/config"
 
 // Utility function to truncate Ethereum addresses
 const truncateAddress = (address: string) => {
@@ -37,9 +41,37 @@ const truncateAddress = (address: string) => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
+// Add this utility function at the top of the file, after the imports
+const formatDeadline = (timestamp: number) => {
+  const date = new Date(timestamp * 1000);
+  const now = new Date();
+  const timeLeft = date.getTime() - now.getTime();
+  const daysLeft = Math.ceil(timeLeft / (1000 * 60 * 60 * 24));
+  const hoursLeft = Math.ceil((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutesLeft = Math.ceil((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+
+  if (timeLeft <= 0) {
+    return "Voting period has ended";
+  }
+
+  let timeString = "";
+  if (daysLeft > 0) {
+    timeString = `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`;
+  } else if (hoursLeft > 0) {
+    timeString = `${hoursLeft} hour${hoursLeft !== 1 ? 's' : ''} left`;
+  } else if (minutesLeft > 0) {
+    timeString = `${minutesLeft} minute${minutesLeft !== 1 ? 's' : ''} left`;
+  } else {
+    timeString = "Less than a minute left";
+  }
+
+  return `${date.toLocaleDateString()} at ${date.toLocaleTimeString()} (${timeString})`;
+};
+
 export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
-  const { connected, address } = useWallet()
+  const { connected, address, provider } = useWallet()
   const { voteOnSubmission, completeBounty } = useBounty()
+  const { toast } = useToast()
 
   const [voting, setVoting] = useState(false)
   const [completing, setCompleting] = useState(false)
@@ -47,6 +79,165 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
   const [selectedSubmissionIndex, setSelectedSubmissionIndex] = useState(0)
   const [loadingMetadata, setLoadingMetadata] = useState(false)
   const [metadata, setMetadata] = useState<ProofMetadata | null>(null)
+  const [transactionStage, setTransactionStage] = useState<"submitted" | "pending" | "confirmed" | "error">("submitted")
+  const [transactionError, setTransactionError] = useState<string | null>(null)
+  const [votedSubmissions, setVotedSubmissions] = useState<Set<number>>(new Set())
+  const [rewardAmount, setRewardAmount] = useState<string>("")
+  const [settingReward, setSettingReward] = useState(false)
+
+  // Add getSignedContract function
+  const getSignedContract = () => {
+    if (!provider) throw new Error("Provider not initialized")
+    const signer = provider.getSigner()
+    return new ethers.Contract(communityAddress, abi.abi, signer)
+  }
+
+  // Update the handleSetReward function
+  const handleSetReward = async (submissionIndex: number) => {
+    if (!connected || !provider) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!rewardAmount || isNaN(Number(rewardAmount)) || Number(rewardAmount) <= 0) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid reward amount",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setSettingReward(true)
+      setTransactionStage("submitted")
+      setTransactionError(null)
+
+      const iface = new ethers.utils.Interface(abi.abi)
+      const rewardWei = ethers.utils.parseEther(rewardAmount)
+      const encodedData = iface.encodeFunctionData("setSubmissionReward", [
+        bounty.id,
+        submissionIndex,
+        rewardWei
+      ])
+
+      const signer = provider.getSigner()
+      const address = await signer.getAddress()
+
+      // Create transaction with value
+      const tx = {
+        from: address,
+        to: communityAddress,
+        data: encodedData,
+        value: rewardWei,
+        gasLimit: ethers.utils.hexlify(500000),
+        gasPrice: await provider.getGasPrice(),
+        nonce: await provider.getTransactionCount(address),
+      }
+
+      // Send transaction
+      const txResponse = await signer.sendTransaction(tx)
+      setTransactionStage("pending")
+
+      const txReceipt = await txResponse.wait()
+      console.log("Reward sent successfully")
+      setTransactionStage("confirmed")
+
+      toast({
+        title: "Success",
+        description: "Reward set successfully",
+      })
+
+      // Wait for a moment to show the completed state
+      await new Promise(resolve => setTimeout(resolve, 1500))
+
+      // Reload page to show updated state
+      window.location.reload()
+    } catch (error: any) {
+      console.error("Error sending reward:", error)
+      setTransactionStage("error")
+      setTransactionError(error.message || "Failed to send reward. Please try again.")
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send reward. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setSettingReward(false)
+    }
+  }
+
+  // Update the handleComplete function
+  const handleComplete = async () => {
+    if (!connected || !provider) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Check if user is bounty creator
+    if (address?.toLowerCase() !== bounty.creator.toLowerCase()) {
+      toast({
+        title: "Error",
+        description: "Only the bounty creator can complete the bounty",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Check if deadline has passed
+    if (new Date(bounty.deadline * 1000) > new Date()) {
+      toast({
+        title: "Error",
+        description: "Cannot complete bounty before deadline",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setCompleting(true)
+      setTransactionStage("submitted")
+      setTransactionError(null)
+
+      const contract = getSignedContract()
+      const tx = await contract.completeBounty(bounty.id)
+      setTransactionStage("pending")
+
+      await tx.wait()
+      console.log("Bounty completed successfully")
+      setTransactionStage("confirmed")
+
+      toast({
+        title: "Success",
+        description: "Bounty completed successfully",
+      })
+
+      // Wait for a moment to show the completed state
+      await new Promise(resolve => setTimeout(resolve, 1500))
+
+      // Reload page to show updated state
+      window.location.reload()
+    } catch (error: any) {
+      console.error("Error completing bounty:", error)
+      setTransactionStage("error")
+      setTransactionError(error.message || "Failed to complete bounty. Please try again.")
+      toast({
+        title: "Error",
+        description: error.message || "Failed to complete bounty. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setCompleting(false)
+    }
+  }
 
   // Add null check for bounty
   if (!bounty) {
@@ -73,129 +264,80 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
   }
 
   const handleVote = async (submissionIndex: number, approve: boolean) => {
-    if (!connected) return
-
-    const submission = bounty.submissions[submissionIndex]
-    
-    // Check if user is the submitter
-    if (submission.submitter.toLowerCase() === address?.toLowerCase()) {
-      setError("You cannot vote on your own submission")
+    if (!connected) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      })
       return
     }
 
-    // Check if user has already voted
-    if (hasVoted(submissionIndex)) {
-      setError("You have already voted on this submission")
+    if (submissionIndex < 0 || submissionIndex >= bounty.submissions.length) {
+      toast({
+        title: "Error",
+        description: "Invalid submission index",
+        variant: "destructive",
+      })
       return
     }
 
-    // Check if maximum votes reached
-    if (submission.approvalCount + submission.rejectCount >= 3) {
-      setError("Maximum votes reached for this submission")
+    if (bounty.submissions[submissionIndex].submitter.toLowerCase() === address?.toLowerCase()) {
+      toast({
+        title: "Error",
+        description: "You cannot vote on your own submission",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (votedSubmissions.has(submissionIndex)) {
+      toast({
+        title: "Error",
+        description: "You have already voted on this submission",
+        variant: "destructive",
+      })
       return
     }
 
     try {
       setVoting(true)
-      setError("")
-      await voteOnSubmission(bounty.id, submissionIndex, approve)
-      // Set the tab preference to verification before reloading
-      localStorage.setItem('bounty-active-tab', 'verification')
-      // Reload page to reflect changes
+      setTransactionStage("submitted")
+      setTransactionError(null)
+
+      const tx = await voteOnSubmission(bounty.id, submissionIndex, approve)
+      setTransactionStage("pending")
+
+      await tx.wait()
+      console.log("Vote transaction confirmed")
+      setTransactionStage("confirmed")
+
+      toast({
+        title: "Success",
+        description: `Vote ${approve ? "approved" : "rejected"} successfully`,
+      })
+
+      // Add to voted submissions
+      setVotedSubmissions(prev => new Set([...prev, submissionIndex]))
+
+      // Wait for a moment to show the completed state
+      await new Promise(resolve => setTimeout(resolve, 1500))
+
+      // Reload page to show updated state
       window.location.reload()
-    } catch (err: any) {
-      console.error("Error voting on submission:", err)
-      setError(err.message || "Failed to vote on submission")
+    } catch (error: any) {
+      console.error("Error voting:", error)
+      setTransactionStage("error")
+      setTransactionError(error.message || "Failed to vote. Please try again.")
+      toast({
+        title: "Error",
+        description: error.message || "Failed to vote. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setVoting(false)
     }
   }
-
-  const handleComplete = async () => {
-    if (!connected) {
-      setError("Please connect your wallet first");
-      return;
-    }
-
-    // Check if user is bounty creator
-    if (address?.toLowerCase() !== bounty.creator.toLowerCase()) {
-      setError("Only the bounty creator can complete the bounty");
-      return;
-    }
-
-    // Check if deadline has passed
-    if (new Date(bounty.deadline * 1000) > new Date()) {
-      setError("Cannot complete bounty yet. The deadline hasn't passed. Voting is still in progress until " + new Date(bounty.deadline * 1000).toLocaleString());
-      return;
-    }
-
-    // Check if there are any approved submissions
-    const approvedSubmissions = bounty.submissions.filter(sub => sub.approved);
-    if (approvedSubmissions.length === 0) {
-      setError("Cannot complete bounty. There are no approved submissions.");
-      return;
-    }
-
-    // Check if all approved submissions have received enough votes
-    const incompleteVoting = approvedSubmissions.some(sub => 
-      (sub.approvalCount + sub.rejectCount) < 3
-    );
-    
-    if (incompleteVoting) {
-      setError("Cannot complete bounty. Some approved submissions haven't received all required votes yet.");
-      return;
-    }
-
-    // Check if any submission is marked as winner
-    const winners = bounty.submissions.filter(sub => sub.isWinner);
-    if (winners.length === 0) {
-      setError("Cannot complete bounty. No winners have been determined yet.");
-      return;
-    }
-
-    try {
-      setCompleting(true);
-      setError("");
-      
-      // Add loading state message
-      setError("Processing transaction... Please wait and approve the transaction in your wallet.");
-      
-      await completeBounty(bounty.id);
-      
-      // Set the tab preference to verification before reloading
-      localStorage.setItem('bounty-active-tab', 'verification');
-      
-      // Show success message before reload
-      setError("Transaction submitted successfully! Page will refresh to show updated status.");
-      
-      // Add a small delay before reload to show the success message
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
-      
-    } catch (err: any) {
-      console.error("Error completing bounty:", err);
-      
-      // Handle specific error cases
-      if (err.message.includes("execution reverted")) {
-        if (err.message.includes("Bounty already completed")) {
-          setError("This bounty has already been completed.");
-        } else if (err.message.includes("Bounty deadline not reached")) {
-          setError("Cannot complete bounty yet. The deadline hasn't passed.");
-        } else if (err.message.includes("No winners found")) {
-          setError("Cannot complete bounty. No winners have been determined yet.");
-        } else {
-          setError("Transaction failed. Please ensure all requirements are met and you have enough funds for gas.");
-        }
-      } else if (err.code === 4001) {
-        setError("Transaction was rejected in your wallet.");
-      } else {
-        setError(err.message || "Failed to complete bounty. Please try again.");
-      }
-    } finally {
-      setCompleting(false);
-    }
-  };
 
   const loadSubmissionMetadata = async (submission: Submission) => {
     console.log("Loading metadata for submission:", submission)
@@ -334,7 +476,8 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
   // Calculate voting progress
   const getVotingProgress = (submission: Submission) => {
     const totalVotes = submission.approvalCount + submission.rejectCount
-    return (totalVotes / 3) * 100
+    const voteDifference = submission.approvalCount - submission.rejectCount
+    return voteDifference > 0 ? 100 : (voteDifference < 0 ? 0 : 50)
   }
 
   // Check if submission is a winner
@@ -359,6 +502,22 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
     }, 100)
   }
 
+  // Show loading state while transaction is pending
+  if (voting || settingReward || completing) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="text-center py-6">
+            <TransactionProgress 
+              stage={transactionStage} 
+              errorMessage={transactionError || undefined}
+            />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-5 mb-6">
@@ -367,14 +526,13 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
           How Voting Works
         </h3>
         <p className="text-sm text-blue-700 dark:text-blue-400">
-          Each submission needs <span className="font-semibold">3 total votes</span>. If approve votes exceed reject votes,
-          the submitter becomes a winner. Multiple winners will share the reward equally. You cannot vote on your own
-          submission or vote multiple times.
+          A submission is approved when it receives more approval votes than rejection votes. 
+          The bounty creator can set custom reward amounts for approved submissions.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {bounty.submissions.map((submission, index) => (
+      {bounty.submissions.map((submission, index) => (
           <Card
             key={index}
             className={`overflow-hidden transition-all duration-300 ${
@@ -397,9 +555,9 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                   </Badge>
                 )}
               </div>
-            </CardHeader>
+          </CardHeader>
             <CardContent className="pt-4">
-              <div className="space-y-4">
+            <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-4">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground mb-1">Submitted by</p>
@@ -408,7 +566,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                       <p className="font-medium">{truncateAddress(submission.submitter)}</p>
                     </div>
                   </div>
-                  <div>
+              <div>
                     <p className="text-sm font-medium text-muted-foreground mb-1">Proof</p>
                     {submission.proofCID ? (
                       <a
@@ -463,7 +621,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
 
                 {/* Vote counts display */}
                 <div className="flex justify-between items-center p-2 bg-muted/10 rounded-md">
-                  <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1.5">
                       <ThumbsUp className={`h-4 w-4 ${submission.approvalCount > 0 ? 'text-green-500' : 'text-muted-foreground'}`} />
                       <span className="text-sm font-medium">{submission.approvalCount}</span>
@@ -485,14 +643,14 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                     <span className="text-xs text-muted-foreground">
                       {3 - (submission.approvalCount + submission.rejectCount)} votes left
                     </span>
-                  </div>
                 </div>
+              </div>
 
                 {/* Only show voting buttons if deadline hasn't passed */}
-                {new Date(bounty.deadline * 1000) > new Date() && (
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
+                {new Date(bounty.deadline * 1000) > new Date() ? (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
                       size="sm"
                       className="flex-1"
                       onClick={() => handleVote(index, true)}
@@ -504,20 +662,59 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex-1"
+                    className="flex-1"
                       onClick={() => handleVote(index, false)}
                       disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
-                    >
+                  >
                       <X className="h-4 w-4 mr-2 text-red-500" />
-                      Reject
-                    </Button>
+                    Reject
+                  </Button>
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md">
+                    Voting period has ended
                   </div>
                 )}
 
-                {/* Show voting status message if deadline has passed */}
-                {new Date(bounty.deadline * 1000) <= new Date() && (
+                {/* Add reward setting section for approved submissions */}
+                {submission.approved && isCreator && !bounty.completed && new Date(bounty.deadline * 1000) < new Date() && (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        placeholder="Enter reward amount"
+                        value={rewardAmount}
+                        onChange={(e) => setRewardAmount(e.target.value)}
+                        className="flex-1 px-3 py-2 border rounded-md text-sm"
+                        min="0"
+                        step="0.000000000000000001"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => handleSetReward(index)}
+                        disabled={settingReward || !rewardAmount}
+                      >
+                        {settingReward ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Setting...
+                          </>
+                        ) : (
+                          "Set Reward"
+                        )}
+                      </Button>
+                    </div>
+                    {submission.rewardAmount && Number(submission.rewardAmount) > 0 && (
+                      <div className="text-sm text-green-600 dark:text-green-400">
+                        Current reward: {ethers.utils.formatEther(submission.rewardAmount)} ETH
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isCreator && new Date(bounty.deadline * 1000) > new Date() && (
                   <div className="text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md">
-                    Voting period has ended
+                    You can set rewards after the deadline has passed
                   </div>
                 )}
 
@@ -553,7 +750,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
               <div>
                 <h3 className="font-medium text-amber-800 dark:text-amber-300">Voting in Progress</h3>
                 <p className="text-sm text-amber-700/90 dark:text-amber-400 mt-0.5">
-                  This bounty has approved submissions but voting period is still active until {new Date(bounty.deadline * 1000).toLocaleString()}. 
+                  This bounty has approved submissions but voting period is still active until {formatDeadline(bounty.deadline)}. 
                   Each submission requires 3 votes to determine winners.
                 </p>
               </div>
@@ -562,7 +759,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
         </Card>
       )}
 
-      {/* Only show Complete Bounty when deadline has passed */}
+      {/* Complete Bounty Card - Only show when explicitly clicking complete */}
       {bounty.submissions.some(sub => sub.approved) && !bounty.completed && new Date(bounty.deadline * 1000) < new Date() && (
         <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-800/50">
           <CardContent className="p-6">
