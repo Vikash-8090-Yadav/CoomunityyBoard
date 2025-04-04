@@ -86,7 +86,11 @@ export default function SubmissionDetails({
         <div>
           <h3 className="font-semibold">Status</h3>
           <p className="text-sm text-muted-foreground">
-            {submission.approved ? "Approved" : "Not Approved"}
+            {isDeadlinePassed ? (
+              submission.approved ? "Approved" : "Not Approved"
+            ) : (
+              "Pending (Voting in Progress)"
+            )}
           </p>
         </div>
 
