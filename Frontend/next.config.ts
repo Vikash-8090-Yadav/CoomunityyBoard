@@ -1,9 +1,8 @@
-import  { NextConfig } from "next";
+import { NextConfig } from "next";
 
-const nextConfig = {
-  /* config options here */
-  images :{
-    domains :["ipfs.infura.io","sal-dapp.infura-ipfs.io"]
+const nextConfig: NextConfig = {
+  images: {
+    domains: ["ipfs.infura.io", "sal-dapp.infura-ipfs.io"]
   }
 };
 
