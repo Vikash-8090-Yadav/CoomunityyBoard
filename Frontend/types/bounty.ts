@@ -18,6 +18,8 @@ export interface Submission {
   payoutTxHash?: string
   bountyTitle?: string
   reward?: string | bigint
+  submissionTime?: number
+  qualityScore?: number
 }
 
 export interface Bounty {
@@ -35,6 +37,7 @@ export interface Bounty {
   submissions: Submission[]
   status: number
   winner?: string
+  rewardAmount: string | bigint
 }
 
 // The file structure from Pinata response
