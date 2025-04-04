@@ -387,10 +387,16 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                             <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
                             Submission #{index + 1}
                           </CardTitle>
-                          {submission.approved ? (
-                            <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
-                              Approved
-                            </Badge>
+                          {isExpired ? (
+                            submission.approved ? (
+                              <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
+                                Approved
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                                Not Approved
+                              </Badge>
+                            )
                           ) : (
                             <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
                               Pending
