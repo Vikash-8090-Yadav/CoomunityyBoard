@@ -34,6 +34,7 @@
     "react-dom": "^19.0.0",
     "react-toastify": "^9.0.7",
     "recharts": "^2.10.1",
+    "sonner": "^2.0.3",
     "tailwind-merge": "^2.0.0",
     "tailwindcss-animate": "^1.0.7",
     "wagmi": "^2.14.15"
