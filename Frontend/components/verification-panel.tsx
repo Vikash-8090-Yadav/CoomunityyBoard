@@ -35,6 +35,7 @@ import { TransactionProgress } from "@/components/ui/transaction-progress"
 import abi from "@/abi/CommunityBountyBoard.json"
 import { communityAddress } from "@/config"
 import QualityCheckPanel from './quality-check-panel'
+import { RewardDistributionPanel } from './reward-distribution-panel'
 
 // Utility function to truncate Ethereum addresses
 const truncateAddress = (address: string) => {
@@ -88,6 +89,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
   const [votedSubmissions, setVotedSubmissions] = useState<Set<number>>(new Set())
   const [rewardAmounts, setRewardAmounts] = useState<{ [key: number]: string }>({})
   const [settingReward, setSettingReward] = useState(false)
+  const [showRewardDistribution, setShowRewardDistribution] = useState(false)
 
   // Add getSignedContract function
   const getSignedContract = () => {
@@ -122,39 +124,41 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
       setTransactionStage("submitted")
       setTransactionError(null)
 
-      const iface = new ethers.utils.Interface(abi.abi)
       const rewardWei = ethers.utils.parseEther(rewardAmount)
-      const encodedData = iface.encodeFunctionData("setSubmissionReward", [
+      const contract = getSignedContract()
+
+      // Send the transaction
+      const tx = await contract.setSubmissionReward(
         bounty.id,
         submissionIndex,
-        rewardWei
-      ])
-
-      const signer = provider.getSigner()
-      const address = await signer.getAddress()
-
-      // Create transaction with value
-      const tx = {
-        from: address,
-        to: communityAddress,
-        data: encodedData,
-        value: rewardWei,
-        gasLimit: ethers.utils.hexlify(500000),
-        gasPrice: await provider.getGasPrice(),
-        nonce: await provider.getTransactionCount(address),
-      }
-
-      // Send transaction
-      const txResponse = await signer.sendTransaction(tx)
+        rewardWei,
+        { value: rewardWei }
+      )
       setTransactionStage("pending")
 
-      const txReceipt = await txResponse.wait()
+      const txReceipt = await tx.wait()
       console.log("Reward sent successfully")
       setTransactionStage("confirmed")
 
+      // Get the transaction hash
+      const txHash = txReceipt.transactionHash
+
       toast({
         title: "Success",
-        description: "Reward set successfully",
+        description: (
+          <div className="flex flex-col gap-2">
+            <p>Reward set successfully</p>
+            <a
+              href={`https://sepolia.etherscan.io/tx/${txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              <ExternalLink className="h-4 w-4 mr-1" />
+              View Transaction
+            </a>
+          </div>
+        ),
       })
 
       // Wait for a moment to show the completed state
@@ -507,6 +511,13 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
     }, 100)
   }
 
+  const handleAcceptDistribution = (distributions: any[]) => {
+    // Here you would implement the actual reward distribution logic
+    console.log('Applying reward distribution:', distributions);
+    // You would typically call a contract function to distribute rewards
+    setShowRewardDistribution(false);
+  };
+
   // Show loading state while transaction is pending
   if (voting || settingReward || completing) {
     return (
@@ -668,23 +679,21 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                   </div>
                 )}
 
-                {/* Add quality check panel for approved submissions */}
-                {submission.approved && (
-                  <QualityCheckPanel
-                    submission={{
-                      proof: submission.ipfsProofHash,
-                      comments: Array.isArray(submission.comments) ? submission.comments.join('\n') : submission.comments || '',
-                      requirements: bounty.proofRequirements
-                    }}
-                    onQualityCheck={(score, feedback) => {
-                      console.log('Quality check completed:', { score, feedback });
-                    }}
-                    userRole={isCreator ? 'owner' : 'viewer'}
-                    isApproved={submission.approved}
-                    isSubmitter={submission.submitter.toLowerCase() === address?.toLowerCase()}
-                    bountyAmount={bounty.rewardAmount}
-                  />
-                )}
+                {/* Add quality check panel for all submissions */}
+                <QualityCheckPanel
+                  submission={{
+                    proof: submission.ipfsProofHash,
+                    comments: Array.isArray(submission.comments) ? submission.comments.join('\n') : submission.comments || '',
+                    requirements: bounty.proofRequirements
+                  }}
+                  onQualityCheck={(score, feedback) => {
+                    console.log('Quality check completed:', { score, feedback });
+                  }}
+                  userRole={isCreator ? 'owner' : 'viewer'}
+                  isApproved={submission.approved}
+                  isSubmitter={submission.submitter.toLowerCase() === address?.toLowerCase()}
+                  bountyAmount={Number(bounty.rewardAmount || bounty.reward)}
+                />
 
                 {/* Add reward setting section for approved submissions */}
                 {submission.approved && isCreator && !bounty.completed && new Date(bounty.deadline * 1000) < new Date() && (
@@ -933,6 +942,36 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {isCreator && selectedSubmissionIndex !== null && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold">Reward Distribution</h3>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowRewardDistribution(!showRewardDistribution)}
+            >
+              {showRewardDistribution ? 'Hide Distribution' : 'Show Distribution'}
+            </Button>
+          </div>
+
+          {showRewardDistribution && (
+            <RewardDistributionPanel
+              submissions={[{
+                proof: bounty.submissions[selectedSubmissionIndex].ipfsProofHash,
+                comments: Array.isArray(bounty.submissions[selectedSubmissionIndex].comments) ? bounty.submissions[selectedSubmissionIndex].comments.join('\n') : bounty.submissions[selectedSubmissionIndex].comments || '',
+                submitter: bounty.submissions[selectedSubmissionIndex].submitter,
+                submissionTime: new Date((bounty.submissions[selectedSubmissionIndex].submissionTime || bounty.submissions[selectedSubmissionIndex].timestamp) * 1000).toISOString(),
+                qualityScore: bounty.submissions[selectedSubmissionIndex].qualityScore
+              }]}
+              totalReward={Number(bounty.rewardAmount || bounty.reward)}
+              requirements={bounty.proofRequirements}
+              onAccept={handleAcceptDistribution}
+            />
+          )}
+        </div>
       )}
     </div>
   )
