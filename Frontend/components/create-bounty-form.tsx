@@ -19,7 +19,7 @@ import { communityAddress } from "@/config"
 import abi from "@/abi/CommunityBountyBoard.json"
 import { useToast } from "@/components/ui/use-toast"
 import { TransactionProgress } from "@/components/ui/transaction-progress"
-import { BountyAISuggestions } from './bounty-ai-suggestions'
+import BountyAISuggestions from './bounty-ai-suggestions'
 
 export default function CreateBountyForm() {
   const router = useRouter()

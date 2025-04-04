@@ -1,7 +1,7 @@
 'use client'
 
 import { WagmiProvider, createConfig, http } from 'wagmi'
-import { confluxESpace, confluxESpaceTestnet, mainnet, sepolia } from 'wagmi/chains'
+import { confluxESpaceTestnet } from 'wagmi/chains'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BountyProvider } from '@/context/bounty-context'
 

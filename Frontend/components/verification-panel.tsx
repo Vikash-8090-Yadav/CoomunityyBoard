@@ -35,7 +35,7 @@ import { TransactionProgress } from "@/components/ui/transaction-progress"
 import abi from "@/abi/CommunityBountyBoard.json"
 import { communityAddress } from "@/config"
 import QualityCheckPanel from './quality-check-panel'
-import { RewardDistributionPanel } from './reward-distribution-panel'
+import RewardDistributionPanel from './reward-distribution-panel'
 
 // Utility function to truncate Ethereum addresses
 const truncateAddress = (address: string) => {
@@ -682,17 +682,19 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                 {/* Add quality check panel for all submissions */}
                 <QualityCheckPanel
                   submission={{
-                    proof: submission.ipfsProofHash,
+                    id: submission.id,
+                    bountyId: bounty.id,
+                    submitter: submission.submitter,
+                    proofCID: submission.ipfsProofHash,
                     comments: Array.isArray(submission.comments) ? submission.comments.join('\n') : submission.comments || '',
-                    requirements: bounty.proofRequirements
                   }}
                   onQualityCheck={(score, feedback) => {
                     console.log('Quality check completed:', { score, feedback });
                   }}
                   userRole={isCreator ? 'owner' : 'viewer'}
-                  isApproved={submission.approved}
                   isSubmitter={submission.submitter.toLowerCase() === address?.toLowerCase()}
-                  bountyAmount={Number(bounty.rewardAmount || bounty.reward)}
+                  bountyAmount={String(bounty.rewardAmount || bounty.reward)}
+                  isApproved={submission.approved}
                 />
 
                 {/* Add reward setting section for approved submissions */}

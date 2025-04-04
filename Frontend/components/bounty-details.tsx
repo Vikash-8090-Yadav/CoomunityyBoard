@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { useWallet } from "@/context/wallet-context"
 import { useBounty } from "@/context/bounty-context"
 import { formatEther } from "ethers/lib/utils"
-import { Calendar, Clock, Award, User, FileText, Loader2, AlertTriangle, Trophy, ExternalLink } from "lucide-react"
+import { Calendar, Clock, Award, User, FileText, Loader2, AlertTriangle, Trophy } from "lucide-react"
 import VerificationPanel from "@/components/verification-panel"
 import SubmissionDetails from "./submission-details"
 import { formatDistanceToNow } from "date-fns"
@@ -61,14 +61,35 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
       setLoading(true)
       setError(null)
       const details = await getBountyDetails(Number(id))
-      setBounty(details)
-    } catch (err: any) {
+      if (details) {
+        const formattedBounty: Bounty = {
+          ...details,
+          rewardAmount: formatEther(details.reward),
+          submissions: details.submissions.map((sub: any): Submission => ({
+            ...sub,
+            rewardAmount: formatEther(details.reward),
+            rewardShare: 1,
+            ipfsProofHash: sub.proofCID || "",
+            timestamp: sub.timestamp,
+            approved: sub.approved,
+            approvalCount: Number(sub.approvalCount),
+            rejectCount: Number(sub.rejectCount),
+            isWinner: sub.isWinner,
+            hasVoted: sub.hasVoted,
+            txHash: sub.txHash,
+            payoutTxHash: sub.payoutTxHash,
+            comments: sub.comments ? [sub.comments] : undefined
+          }))
+        }
+        setBounty(formattedBounty)
+      }
+    } catch (err: unknown) {
       console.error("Error loading bounty:", err)
-      setError(err.message || "Failed to load bounty details")
+      setError(err instanceof Error ? err.message : "Failed to load bounty details")
     } finally {
       setLoading(false)
     }
-  }, [connected, chainId, getBountyDetails, id])
+  }, [connected, getBountyDetails, id])
 
   useEffect(() => {
     loadBounty()
@@ -160,7 +181,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
         isExpired,
       })
     }
-  }, [bounty, connected, address])
+  }, [bounty, connected, address, isActive, isCreator, isExpired])
 
   const handleTabChange = (value: string) => {
     setActiveTab(value)
@@ -284,7 +305,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                     </div>
                     <div className="ml-4">
                       <p className="text-sm text-muted-foreground">Reward</p>
-                      <p className="font-medium text-lg">{bounty?.reward ? formatEther(bounty.reward) : "0"} ETH</p>
+                      <p className="font-medium text-lg">{bounty?.rewardAmount} ETH</p>
                     </div>
                   </div>
 

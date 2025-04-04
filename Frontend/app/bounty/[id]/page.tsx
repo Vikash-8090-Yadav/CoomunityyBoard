@@ -8,10 +8,11 @@ interface PageProps {
   params: {
     id: string;
   };
-  searchParams: { [key: string]: string | string[] | undefined };
 }
 
-export default async function BountyPage({ params, searchParams }: PageProps) {
+export default function BountyPage({ params }: PageProps) {
+  const bountyId = params.id;
+
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <WalletProvider>
@@ -19,7 +20,7 @@ export default async function BountyPage({ params, searchParams }: PageProps) {
           <div className="min-h-screen bg-background">
             <Header />
             <main className="container mx-auto py-6 px-4">
-              <BountyDetails id={params.id} />
+              <BountyDetails id={bountyId} />
             </main>
           </div>
         </BountyProvider>

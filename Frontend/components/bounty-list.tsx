@@ -25,7 +25,7 @@ export default function BountyList() {
     console.log('BountyList: Loading state:', loading);
     console.log('BountyList: Error state:', error);
     console.log('BountyList: Account:', account);
-  }, []);
+  }, [bounties, loading, error, account]);
 
   useEffect(() => {
     console.log('BountyList: Bounties changed:', bounties); // Debug log
