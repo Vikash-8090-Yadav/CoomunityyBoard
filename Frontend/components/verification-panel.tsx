@@ -34,6 +34,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { TransactionProgress } from "@/components/ui/transaction-progress"
 import abi from "@/abi/CommunityBountyBoard.json"
 import { communityAddress } from "@/config"
+import QualityCheckPanel from './quality-check-panel'
 
 // Utility function to truncate Ethereum addresses
 const truncateAddress = (address: string) => {
@@ -65,7 +66,10 @@ const formatDeadline = (timestamp: number) => {
     timeString = "Less than a minute left";
   }
 
-  return `${date.toLocaleDateString()} at ${date.toLocaleTimeString()} (${timeString})`;
+  // Format date in a more compact way: DD/MM/YYYY HH:MM
+  const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+  
+  return `${formattedDate} (${timeString})`;
 };
 
 export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
@@ -82,7 +86,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
   const [transactionStage, setTransactionStage] = useState<"submitted" | "pending" | "confirmed" | "error">("submitted")
   const [transactionError, setTransactionError] = useState<string | null>(null)
   const [votedSubmissions, setVotedSubmissions] = useState<Set<number>>(new Set())
-  const [rewardAmount, setRewardAmount] = useState<string>("")
+  const [rewardAmounts, setRewardAmounts] = useState<{ [key: number]: string }>({})
   const [settingReward, setSettingReward] = useState(false)
 
   // Add getSignedContract function
@@ -103,6 +107,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
       return
     }
 
+    const rewardAmount = rewardAmounts[submissionIndex]
     if (!rewardAmount || isNaN(Number(rewardAmount)) || Number(rewardAmount) <= 0) {
       toast({
         title: "Error",
@@ -545,7 +550,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                   <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
                   Submission #{index + 1}
                 </CardTitle>
-                {submission.approved ? (
+                {new Date(bounty.deadline * 1000) < new Date() && submission.approved ? (
                   <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
                     Approved
                   </Badge>
@@ -621,7 +626,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
 
                 {/* Vote counts display */}
                 <div className="flex justify-between items-center p-2 bg-muted/10 rounded-md">
-                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1.5">
                       <ThumbsUp className={`h-4 w-4 ${submission.approvalCount > 0 ? 'text-green-500' : 'text-muted-foreground'}`} />
                       <span className="text-sm font-medium">{submission.approvalCount}</span>
@@ -631,20 +636,7 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                       <span className="text-sm font-medium">{submission.rejectCount}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Progress 
-                      value={getVotingProgress(submission)} 
-                      className={`w-24 h-2 ${
-                        submission.approvalCount > submission.rejectCount 
-                          ? '[&>div]:bg-green-500' 
-                          : '[&>div]:bg-red-500'
-                      }`}
-                    />
-                    <span className="text-xs text-muted-foreground">
-                      {3 - (submission.approvalCount + submission.rejectCount)} votes left
-                    </span>
                 </div>
-              </div>
 
                 {/* Only show voting buttons if deadline hasn't passed */}
                 {new Date(bounty.deadline * 1000) > new Date() ? (
@@ -676,37 +668,56 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                   </div>
                 )}
 
+                {/* Add quality check panel for approved submissions */}
+                {submission.approved && (
+                  <QualityCheckPanel
+                    submission={{
+                      proof: submission.ipfsProofHash,
+                      comments: Array.isArray(submission.comments) ? submission.comments.join('\n') : submission.comments || '',
+                      requirements: bounty.proofRequirements
+                    }}
+                    onQualityCheck={(score, feedback) => {
+                      console.log('Quality check completed:', { score, feedback });
+                    }}
+                    userRole={isCreator ? 'owner' : 'viewer'}
+                    isApproved={submission.approved}
+                    isSubmitter={submission.submitter.toLowerCase() === address?.toLowerCase()}
+                    bountyAmount={bounty.rewardAmount}
+                  />
+                )}
+
                 {/* Add reward setting section for approved submissions */}
                 {submission.approved && isCreator && !bounty.completed && new Date(bounty.deadline * 1000) < new Date() && (
                   <div className="mt-2 space-y-2">
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        placeholder="Enter reward amount"
-                        value={rewardAmount}
-                        onChange={(e) => setRewardAmount(e.target.value)}
-                        className="flex-1 px-3 py-2 border rounded-md text-sm"
-                        min="0"
-                        step="0.000000000000000001"
-                      />
-                      <Button
-                        size="sm"
-                        onClick={() => handleSetReward(index)}
-                        disabled={settingReward || !rewardAmount}
-                      >
-                        {settingReward ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Setting...
-                          </>
-                        ) : (
-                          "Set Reward"
-                        )}
-                      </Button>
-                    </div>
-                    {submission.rewardAmount && Number(submission.rewardAmount) > 0 && (
+                    {!submission.rewardAmount || Number(submission.rewardAmount) === 0 ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          placeholder="Enter reward amount"
+                          value={rewardAmounts[index] || ""}
+                          onChange={(e) => setRewardAmounts(prev => ({ ...prev, [index]: e.target.value }))}
+                          className="flex-1 px-3 py-2 border rounded-md text-sm"
+                          min="0"
+                          step="0.000000000000000001"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => handleSetReward(index)}
+                          disabled={settingReward || !rewardAmounts[index]}
+                        >
+                          {settingReward ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Setting...
+                            </>
+                          ) : (
+                            "Set Reward"
+                          )}
+                        </Button>
+                      </div>
+                    ) : (
                       <div className="text-sm text-green-600 dark:text-green-400">
-                        Current reward: {ethers.utils.formatEther(submission.rewardAmount)} ETH
+                        Reward set: {ethers.utils.formatEther(submission.rewardAmount)} ETH
                       </div>
                     )}
                   </div>
@@ -896,6 +907,20 @@ export default function VerificationPanel({ bounty }: { bounty: Bounty }) {
                     <div>
                       <p className="text-xs text-muted-foreground">Submission date</p>
                       <p className="font-medium text-sm">{new Date(metadata.timestamp).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Status</p>
+                      {new Date(bounty.deadline * 1000) < new Date() && bounty.submissions[selectedSubmissionIndex].approved ? (
+                        <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
+                          Approved
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                          Pending
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>
