@@ -19,6 +19,7 @@ import { communityAddress } from "@/config"
 import abi from "@/abi/CommunityBountyBoard.json"
 import { useToast } from "@/components/ui/use-toast"
 import { TransactionProgress } from "@/components/ui/transaction-progress"
+import { BountyAISuggestions } from './bounty-ai-suggestions'
 
 export default function CreateBountyForm() {
   const router = useRouter()
@@ -35,6 +36,7 @@ export default function CreateBountyForm() {
   const [error, setError] = useState<string>("")
   const [transactionStage, setTransactionStage] = useState<"submitted" | "pending" | "confirmed" | "error">("submitted")
   const [transactionError, setTransactionError] = useState<string | null>(null)
+  const [showAISuggestions, setShowAISuggestions] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -130,6 +132,14 @@ export default function CreateBountyForm() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleAcceptAISuggestions = (suggestions: any) => {
+    setDescription(suggestions.improvedDescription)
+    setRequirements(suggestions.improvedRequirements.join('\n'))
+    setReward(suggestions.suggestedReward.amount.toString())
+    setDate(new Date(suggestions.suggestedDeadline.date))
+    setShowAISuggestions(false)
   }
 
   // Show loading state while transaction is pending
@@ -261,9 +271,30 @@ export default function CreateBountyForm() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Selected deadline: {date ? format(new Date(date.setHours(parseInt(time.split(':')[0]), parseInt(time.split(':')[1]))), "dd/MM/yyyy HH:mm") : "Not set"}
+              Selected deadline: {date && time ? format(new Date(date.getTime() + new Date(`1970-01-01T${time}`).getTime()), "dd/MM/yyyy HH:mm") : "Not set"}
             </p>
           </div>
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowAISuggestions(!showAISuggestions)}
+            >
+              {showAISuggestions ? 'Hide AI Suggestions' : 'Get AI Suggestions'}
+            </Button>
+          </div>
+
+          {showAISuggestions && (
+            <BountyAISuggestions
+              title={title}
+              description={description}
+              requirements={requirements}
+              rewardAmount={reward}
+              deadline={date ? date.toISOString().split('T')[0] : ''}
+              onAccept={handleAcceptAISuggestions}
+            />
+          )}
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
