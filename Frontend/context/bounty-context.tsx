@@ -416,7 +416,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           hasVoted,
           txHash,
           payoutTxHash,
-          rewardAmount: details.rewardAmount.toString(),
+          rewardAmount: details.rewardAmount ? details.rewardAmount.toString() : "0",
           comments: details.comments ? [details.comments] : undefined
         });
       }
