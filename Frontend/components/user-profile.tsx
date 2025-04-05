@@ -251,7 +251,7 @@ export default function UserProfile() {
             <Card>
               <CardContent className="p-6 text-center">
                 <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
-                <p className="text-muted-foreground">You haven't created any bounties yet</p>
+                <p className="text-muted-foreground">You haven&apos;t created any bounties yet</p>
                 <Button className="mt-4" asChild>
                   <Link href="/create">Create a Bounty</Link>
                 </Button>
@@ -296,7 +296,7 @@ export default function UserProfile() {
             <Card>
               <CardContent className="p-6 text-center">
                 <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
-                <p className="text-muted-foreground">You haven't submitted any bounties yet</p>
+                <p className="text-muted-foreground">You haven&apos;t submitted any bounties yet</p>
                 <Button className="mt-4" asChild>
                   <Link href="/">Browse Bounties</Link>
                 </Button>
