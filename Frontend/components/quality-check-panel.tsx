@@ -14,7 +14,6 @@ interface Submission {
 interface QualityCheckPanelProps {
   submission: Submission;
   onQualityCheck: (score: number, feedback: string) => void;
-  userRole: 'owner' | 'viewer';
   isSubmitter: boolean;
   bountyAmount: string;
   isApproved: boolean;
@@ -23,7 +22,6 @@ interface QualityCheckPanelProps {
 export default function QualityCheckPanel({
   submission,
   onQualityCheck,
-  userRole,
   isSubmitter,
   bountyAmount,
   isApproved
