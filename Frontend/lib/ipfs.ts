@@ -16,40 +16,38 @@ const ipfsClient = create({
   },
 })
 
-export async function uploadToIPFS(file: File): Promise<string> {
+export async function uploadToIPFS(file: File): Promise<{ cid: string; url: string }> {
   try {
-    // For demo purposes, if we don't have real credentials, simulate upload
-    if (projectId === "demo-project-id") {
-      console.log("Using demo mode for IPFS upload")
-      await new Promise((resolve) => setTimeout(resolve, 2000)) // Simulate upload delay
+    const formData = new FormData()
+    formData.append('file', file)
 
-      // Return a fake CID
-      const randomCID = `Qm${Array.from(
-        { length: 44 },
-        () => "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 62)],
-      ).join("")}`
-
-      return randomCID
-    }
-
-    // Real upload logic
-    const fileData = await file.arrayBuffer()
-    const buffer = Buffer.from(fileData)
-
-    const added = await ipfsClient.add(buffer, {
-      progress: (prog) => console.log(`Upload progress: ${prog}`),
+    const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_PINATA_JWT}`
+      },
+      body: formData
     })
 
-    console.log("File uploaded to IPFS with CID:", added.cid.toString())
-    return added.cid.toString()
-  } catch (error) {
-    console.error("Error uploading file to IPFS:", error)
-    throw new Error("Failed to upload to IPFS")
+    if (!response.ok) {
+      throw new Error(`Failed to upload file: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    return {
+      cid: data.IpfsHash,
+      url: `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`
+    }
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to upload to IPFS: ${error.message}`)
+    }
+    throw new Error('Failed to upload to IPFS: Unknown error')
   }
 }
 
 // Function to upload JSON metadata to IPFS
-export async function uploadJSONToIPFS(data: any): Promise<string> {
+export async function uploadJSONToIPFS(data: Record<string, unknown>): Promise<string> {
   try {
     // For demo purposes
     if (projectId === "demo-project-id") {

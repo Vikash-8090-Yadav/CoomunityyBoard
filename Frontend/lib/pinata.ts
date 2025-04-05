@@ -39,7 +39,7 @@ class PinataService {
     return headers;
   }
 
-  async uploadFile(file: File) {
+  async uploadFile(file: File): Promise<{ cid: string; url: string }> {
     try {
       console.log('Starting file upload to Pinata:', {
         fileName: file.name,
@@ -70,7 +70,7 @@ class PinataService {
       let data;
       try {
         data = JSON.parse(responseText);
-      } catch (e) {
+      } catch {
         throw new Error(`Invalid JSON response from Pinata: ${responseText}`);
       }
 
@@ -84,16 +84,12 @@ class PinataService {
         cid: data.IpfsHash,
         url: this.getIPFSUrl(data.IpfsHash)
       };
-    } catch (error) {
-      console.error('Detailed error uploading file to Pinata:', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      throw error;
+    } catch {
+      throw new Error('Failed to upload file to IPFS');
     }
   }
 
-  async uploadJSON(json: object) {
+  async uploadJSON(json: object): Promise<string> {
     try {
       console.log('Starting JSON upload to Pinata:', json);
 
@@ -117,7 +113,7 @@ class PinataService {
       let data;
       try {
         data = JSON.parse(responseText);
-      } catch (e) {
+      } catch {
         throw new Error(`Invalid JSON response from Pinata: ${responseText}`);
       }
 
@@ -127,12 +123,8 @@ class PinataService {
       });
 
       return data.IpfsHash;
-    } catch (error) {
-      console.error('Detailed error uploading JSON to Pinata:', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      throw error;
+    } catch {
+      throw new Error('Failed to upload JSON to IPFS');
     }
   }
 
