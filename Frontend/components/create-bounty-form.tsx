@@ -7,7 +7,6 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
@@ -17,14 +16,23 @@ import { useWallet } from "@/context/wallet-context"
 import { ethers } from "ethers"
 import { communityAddress } from "@/config"
 import abi from "@/abi/CommunityBountyBoard.json"
-import { useToast } from "@/components/ui/use-toast"
 import { TransactionProgress } from "@/components/ui/transaction-progress"
 import BountyAISuggestions from './bounty-ai-suggestions'
+
+interface AISuggestions {
+  improvedDescription: string;
+  improvedRequirements: string[];
+  suggestedReward: {
+    amount: number;
+  };
+  suggestedDeadline: {
+    date: string;
+  };
+}
 
 export default function CreateBountyForm() {
   const router = useRouter()
   const { connected, provider } = useWallet()
-  const { toast } = useToast()
 
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
@@ -64,7 +72,6 @@ export default function CreateBountyForm() {
       }
 
       const signer = provider.getSigner()
-      const contract = new ethers.Contract(communityAddress, abi.abi, signer)
 
       // Convert reward to wei
       const rewardInWei = ethers.utils.parseEther(reward)
@@ -77,8 +84,7 @@ export default function CreateBountyForm() {
       // Calculate deadline timestamp in seconds
       const deadline = Math.floor(deadlineDate.getTime() / 1000)
 
-      // Get current gas price and nonce
-      const gasPrice = await provider.getGasPrice()
+      // Get current nonce
       const nonce = await provider.getTransactionCount(await signer.getAddress())
 
       // Create the transaction data
@@ -97,7 +103,6 @@ export default function CreateBountyForm() {
         to: communityAddress,
         data: encodedData,
         value: rewardInWei,
-        
         nonce: nonce
       }
 
@@ -117,24 +122,28 @@ export default function CreateBountyForm() {
       // Redirect to home page after successful creation
       router.push("/")
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error creating bounty:", err)
       setTransactionStage("error")
       
       // Handle specific error cases
-      if (err.code === 4001) {
-        setTransactionError("Transaction was rejected in your wallet")
-      } else if (err.message.includes("insufficient funds")) {
-        setTransactionError("You don't have enough ETH to create this bounty")
+      if (err instanceof Error) {
+        if (err.message.includes("4001")) {
+          setTransactionError("Transaction was rejected in your wallet")
+        } else if (err.message.includes("insufficient funds")) {
+          setTransactionError("You don't have enough ETH to create this bounty")
+        } else {
+          setTransactionError(err.message || "Failed to create bounty. Please try again.")
+        }
       } else {
-        setTransactionError(err.message || "Failed to create bounty. Please try again.")
+        setTransactionError("Failed to create bounty. Please try again.")
       }
     } finally {
       setLoading(false)
     }
   }
 
-  const handleAcceptAISuggestions = (suggestions: any) => {
+  const handleAcceptAISuggestions = (suggestions: AISuggestions) => {
     setDescription(suggestions.improvedDescription)
     setRequirements(suggestions.improvedRequirements.join('\n'))
     setReward(suggestions.suggestedReward.amount.toString())

@@ -97,21 +97,25 @@ export default function SetRewardForm({
       // Refresh the page to show updated state
       router.refresh()
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error setting reward:", err)
       setTransactionStage("error")
       
       // Handle specific error cases
-      if (err.code === 4001) {
-        setTransactionError("Transaction was rejected in your wallet")
-      } else if (err.message.includes("insufficient funds")) {
-        setTransactionError("You don't have enough ETH to set this reward")
-      } else if (err.message.includes("Cannot set reward before deadline")) {
-        setTransactionError("Cannot set reward before deadline")
-      } else if (err.message.includes("Can only set reward for approved submissions")) {
-        setTransactionError("Can only set reward for approved submissions")
+      if (err instanceof Error) {
+        if (err.message.includes("4001")) {
+          setTransactionError("Transaction was rejected in your wallet")
+        } else if (err.message.includes("insufficient funds")) {
+          setTransactionError("You don't have enough ETH to set this reward")
+        } else if (err.message.includes("Cannot set reward before deadline")) {
+          setTransactionError("Cannot set reward before deadline")
+        } else if (err.message.includes("Can only set reward for approved submissions")) {
+          setTransactionError("Can only set reward for approved submissions")
+        } else {
+          setTransactionError(err.message || "Failed to set reward. Please try again.")
+        }
       } else {
-        setTransactionError(err.message || "Failed to set reward. Please try again.")
+        setTransactionError("Failed to set reward. Please try again.")
       }
     } finally {
       setLoading(false)
