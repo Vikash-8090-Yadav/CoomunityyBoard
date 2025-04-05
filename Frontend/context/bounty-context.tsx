@@ -25,9 +25,10 @@ export interface Submission {
   rewardShare: number;
   hasVoted?: boolean;
   proofCID?: string;
-  comments?: string;
+  comments?: string[];
   txHash: string;
   payoutTxHash?: string;
+  rewardAmount: string;
 }
 
 export interface Bounty {
@@ -44,6 +45,7 @@ export interface Bounty {
   submissionCount: number;
   submissions: Submission[];
   status: number;
+  rewardAmount: string | bigint;
 }
 
 interface ContractSubmission {
@@ -413,7 +415,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           rewardShare: Number(rewardShare),
           hasVoted,
           txHash,
-          payoutTxHash
+          payoutTxHash,
+          rewardAmount: details.rewardAmount.toString(),
+          comments: details.comments ? [details.comments] : undefined
         });
       }
 
@@ -430,7 +434,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         winnerCount: details.winnerCount.toNumber(),
         submissionCount,
         submissions,
-        status: details.completed ? 1 : 0
+        status: details.completed ? 1 : 0,
+        rewardAmount: details.rewardAmount
       };
     } catch (err: any) {
       console.error(`Error fetching bounty ${bountyId}:`, err);
