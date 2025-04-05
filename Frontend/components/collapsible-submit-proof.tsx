@@ -15,7 +15,6 @@ interface CollapsibleSubmitProofProps {
 
 export default function CollapsibleSubmitProof({
   bountyId,
-  bountyTitle,
   isOpen,
   setIsOpen,
 }: CollapsibleSubmitProofProps) {
@@ -46,7 +45,7 @@ export default function CollapsibleSubmitProof({
       </CardHeader>
       {isOpen && (
         <CardContent>
-          <SubmitProofForm bountyId={bountyId} bountyTitle={bountyTitle} />
+          <SubmitProofForm bountyId={Number(bountyId)} />
         </CardContent>
       )}
     </Card>

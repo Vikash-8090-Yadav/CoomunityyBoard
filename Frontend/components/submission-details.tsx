@@ -16,6 +16,17 @@ interface SubmissionDetailsProps {
   deadline: number
 }
 
+interface SubmissionData {
+  submitter: string
+  ipfsProofHash: string
+  timestamp: number
+  approved: boolean
+  approvalCount: number
+  rejectCount: number
+  isWinner: boolean
+  rewardAmount: ethers.BigNumber
+}
+
 export default function SubmissionDetails({
   bountyId,
   submissionId,
@@ -24,7 +35,7 @@ export default function SubmissionDetails({
   deadline
 }: SubmissionDetailsProps) {
   const { connected, provider, address } = useWallet()
-  const [submission, setSubmission] = useState<any>(null)
+  const [submission, setSubmission] = useState<SubmissionData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -38,10 +49,10 @@ export default function SubmissionDetails({
         setSubmission({
           submitter: submissionData.submitter,
           ipfsProofHash: submissionData.ipfsProofHash,
-          timestamp: submissionData.timestamp,
+          timestamp: Number(submissionData.timestamp),
           approved: submissionData.approved,
-          approvalCount: submissionData.approvalCount,
-          rejectCount: submissionData.rejectCount,
+          approvalCount: Number(submissionData.approvalCount),
+          rejectCount: Number(submissionData.rejectCount),
           isWinner: submissionData.isWinner,
           rewardAmount: submissionData.rewardAmount
         })
@@ -101,7 +112,7 @@ export default function SubmissionDetails({
           </p>
         </div>
 
-        {submission.rewardAmount > 0 && (
+        {!submission.rewardAmount.isZero() && (
           <div>
             <h3 className="font-semibold">Reward Set</h3>
             <p className="text-sm text-muted-foreground">

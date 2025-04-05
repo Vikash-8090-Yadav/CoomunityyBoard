@@ -8,18 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { useWallet } from "@/context/wallet-context"
-import { useBounty } from "@/context/bounty-context"
+import { useBounty, type Submission as ContractSubmission } from "@/context/bounty-context"
 import { formatEther } from "ethers/lib/utils"
 import { Calendar, Clock, Award, User, FileText, Loader2, AlertTriangle, Trophy } from "lucide-react"
-import VerificationPanel from "@/components/verification-panel"
-import SubmissionDetails from "./submission-details"
+import { VerificationPanel } from "@/components/verification-panel"
 import { formatDistanceToNow } from "date-fns"
-import type { Bounty, Submission } from "@/types/bounty"
+import type { Bounty as BountyType, Submission as SubmissionType } from "@/types/bounty"
 import CollapsibleSubmitProof from "./collapsible-submit-proof"
-import { useAccount } from "@/context/account-context"
-import { ethers } from "ethers"
-import abi from "@/abi/CommunityBountyBoard.json"
-import { communityAddress } from "@/config"
 
 interface BountyDetailsProps {
   id: string
@@ -29,20 +24,12 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
   const router = useRouter()
   const { connected, address, chainId } = useWallet()
   const { getBountyDetails } = useBounty()
-  const { address: accountAddress } = useAccount()
-  const { provider } = useWallet()
 
-  const [bounty, setBounty] = useState<Bounty | null>(null)
-  const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null)
+  const [bounty, setBounty] = useState<BountyType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitProofOpen, setIsSubmitProofOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("details")
-  const [hasVoted, setHasVoted] = useState(false)
-  const [isVoting, setIsVoting] = useState(false)
-  const [voteError, setVoteError] = useState<string | null>(null)
-  const [isLoadingVoteStatus, setIsLoadingVoteStatus] = useState(true)
-  const [payoutTxHash, setPayoutTxHash] = useState<string | null>(null)
 
   // Add useEffect for tab persistence
   useEffect(() => {
@@ -62,23 +49,36 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
       setError(null)
       const details = await getBountyDetails(Number(id))
       if (details) {
-        const formattedBounty: Bounty = {
-          ...details,
+        const formattedBounty: BountyType = {
+          id: details.id,
+          creator: details.creator,
+          title: details.title,
+          description: details.description,
+          proofRequirements: details.proofRequirements,
+          reward: details.reward,
+          rewardToken: details.rewardToken,
+          deadline: details.deadline,
+          completed: details.completed,
+          winnerCount: details.winnerCount,
+          submissionCount: details.submissionCount,
+          status: details.status,
           rewardAmount: formatEther(details.reward),
-          submissions: details.submissions.map((sub: any): Submission => ({
-            ...sub,
+          submissions: details.submissions.map((sub: ContractSubmission): SubmissionType => ({
+            id: sub.id,
+            bountyId: Number(id),
+            submitter: sub.submitter,
             rewardAmount: formatEther(details.reward),
-            rewardShare: 1,
-            ipfsProofHash: sub.proofCID || "",
+            rewardShare: sub.rewardShare,
+            ipfsProofHash: sub.ipfsProofHash,
             timestamp: sub.timestamp,
             approved: sub.approved,
-            approvalCount: Number(sub.approvalCount),
-            rejectCount: Number(sub.rejectCount),
+            approvalCount: sub.approvalCount,
+            rejectCount: sub.rejectCount,
             isWinner: sub.isWinner,
             hasVoted: sub.hasVoted,
             txHash: sub.txHash,
             payoutTxHash: sub.payoutTxHash,
-            comments: sub.comments ? [sub.comments] : undefined
+            comments: undefined
           }))
         }
         setBounty(formattedBounty)
@@ -94,51 +94,6 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
   useEffect(() => {
     loadBounty()
   }, [loadBounty])
-
-  useEffect(() => {
-    const checkVoteStatus = async () => {
-      if (!bounty || !selectedSubmission || !accountAddress || !provider) return;
-
-      setIsLoadingVoteStatus(true);
-      try {
-        const contract = new ethers.Contract(
-          communityAddress,
-          abi.abi,
-          provider
-        );
-
-        const voted = await contract.hasVotedOnSubmission(bounty.id, selectedSubmission.id, accountAddress);
-        setHasVoted(voted);
-      } catch (error) {
-        console.error("Error checking vote status:", error);
-      } finally {
-        setIsLoadingVoteStatus(false);
-      }
-    };
-
-    const fetchPayoutHash = async () => {
-      if (!bounty || !selectedSubmission || !provider) return;
-
-      try {
-        const contract = new ethers.Contract(
-          communityAddress,
-          abi.abi,
-          provider
-        );
-
-        const hash = await contract.getPayoutTxHash(bounty.id, selectedSubmission.id);
-        if (hash && hash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
-          setPayoutTxHash(hash);
-        }
-      } catch (error) {
-        console.error("Error fetching payout hash:", error);
-        // Don't set error state here as it's not critical
-      }
-    };
-
-    checkVoteStatus();
-    fetchPayoutHash();
-  }, [accountAddress, bounty, selectedSubmission, provider]);
 
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleDateString()
@@ -395,7 +350,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                 </Card>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {bounty.submissions.map((submission: Submission, index: number) => (
+                  {bounty.submissions.map((submission: SubmissionType, index: number) => (
                     <Card
                       key={index}
                       className={`overflow-hidden transition-all duration-300 ${
@@ -468,7 +423,6 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                                 <button
                                   onClick={() => {
                                     setActiveTab("verification");
-                                    setSelectedSubmission(submission);
                                   }}
                                   className="text-primary hover:underline flex items-center group"
                                 >
@@ -492,14 +446,6 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                             variant="outline"
                             size="sm"
                             className="w-full mt-2"
-                            onClick={() => {
-                              setSelectedSubmission(submission);
-                              setActiveTab("verification");
-                              const verificationTab = document.querySelector('[value="verification"]');
-                              if (verificationTab) {
-                                verificationTab.scrollIntoView({ behavior: 'smooth' });
-                              }
-                            }}
                           >
                             View Details
                           </Button>
@@ -527,7 +473,10 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
             <TabsContent value="verification">
               {bounty && (
                 <div className="space-y-6">
-                  <VerificationPanel bounty={bounty} />
+                  <VerificationPanel 
+                    bountyId={bounty.id.toString()} 
+                    bountyCreator={bounty.creator} 
+                  />
                 </div>
               )}
             </TabsContent>

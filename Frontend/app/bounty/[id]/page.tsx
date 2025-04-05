@@ -5,13 +5,14 @@ import Header from "@/components/header"
 import BountyDetails from "@/components/bounty-details"
 
 interface PageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function BountyPage({ params }: PageProps) {
-  const bountyId = params.id;
+export default async function BountyPage({ params }: PageProps) {
+  const resolvedParams = await params;
+  const bountyId = resolvedParams.id;
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
