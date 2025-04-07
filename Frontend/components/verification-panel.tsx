@@ -15,7 +15,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import Image from "next/image"
 import QualityCheckPanel from './quality-check-panel'
 
-interface SubmissionData {
+type SubmissionData = {
   id: string
   submitter: string
   proofCID: string
@@ -31,15 +31,7 @@ interface SubmissionData {
   qualityScore?: number
 }
 
-interface VerificationPanelProps {
-  bountyId: number
-  bountyCreator: string
-  deadline: number
-  rewardAmount: string
-  proofRequirements: string
-}
-
-interface SubmissionMetadata {
+type SubmissionMetadata = {
   title: string
   description: string
   submitter: string
@@ -50,6 +42,14 @@ interface SubmissionMetadata {
     url: string
   }>
   links: string[]
+}
+
+interface VerificationPanelProps {
+  bountyId: number
+  bountyCreator: string
+  deadline: number
+  rewardAmount: string
+  proofRequirements: string
 }
 
 export default function VerificationPanel({ 
@@ -427,354 +427,373 @@ export default function VerificationPanel({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-5 mb-6">
-        <h3 className="font-medium text-blue-800 dark:text-blue-300 mb-2 flex items-center">
-          <Info className="h-5 w-5 mr-2" />
-          How Voting Works
-        </h3>
-        <p className="text-sm text-blue-700 dark:text-blue-400">
-          A submission is approved when it receives more approval votes than rejection votes. 
-          The bounty creator can set custom reward amounts for approved submissions.
-        </p>
-      </div>
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>Verification Panel</span>
+          <Badge variant="outline" className="ml-2">
+            {connected ? "Connected" : "Not Connected"}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <div className="flex items-center">
+              <User className="mr-2 h-4 w-4" />
+              <span>Creator: {bountyCreator}</span>
+            </div>
+            <div className="flex items-center">
+              <Calendar className="mr-2 h-4 w-4" />
+              <span>Deadline: {new Date(deadline * 1000).toLocaleDateString()}</span>
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Proof Requirements:</h4>
+            <p className="text-sm text-muted-foreground whitespace-pre-line">{proofRequirements}</p>
+          </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {submissions.map((submission, index) => (
-          <Card
-            key={index}
-            className={`overflow-hidden transition-all duration-300 ${
-              submission.status === "approved" ? "border-green-200 shadow-green-100 dark:border-green-800" : "hover:shadow-md"
-            }`}
-          >
-            <CardHeader className="pb-3">
-              <div className="flex justify-between items-center">
-                <CardTitle className="text-lg flex items-center">
-                  <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
-                  Submission #{index + 1}
-                </CardTitle>
-                {new Date(deadline * 1000) < new Date() && submission.status === "approved" ? (
-                  <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
-                    Approved
-                  </Badge>
-                ) : (
-                  <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
-                    Pending
-                  </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-1">Submitted by</p>
-                    <div className="flex items-center">
-                      <User className="h-4 w-4 mr-2 text-primary/70" />
-                      <p className="font-medium">{submission.submitter.slice(0, 6)}...{submission.submitter.slice(-4)}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-1">Proof</p>
-                    {submission.proofCID ? (
-                      <a
-                        href={`https://gateway.pinata.cloud/ipfs/${submission.proofCID}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline flex items-center group"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          const pinataUrl = `https://gateway.pinata.cloud/ipfs/${submission.proofCID}`
-                          const publicUrl = `https://ipfs.io/ipfs/${submission.proofCID}`
-                          
-                          fetch(pinataUrl)
-                            .then(response => {
-                              if (response.ok) {
-                                window.open(pinataUrl, '_blank')
-                              } else {
-                                window.open(publicUrl, '_blank')
-                              }
-                            })
-                            .catch(() => {
-                              window.open(publicUrl, '_blank')
-                            })
-                        }}
-                      >
-                        <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
-                        <span className="font-medium">View Proof</span>
-                      </a>
+          <Separator />
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {submissions.map((submission, index) => (
+              <Card
+                key={index}
+                className={`overflow-hidden transition-all duration-300 ${
+                  submission.status === "approved" ? "border-green-200 shadow-green-100 dark:border-green-800" : "hover:shadow-md"
+                }`}
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex justify-between items-center">
+                    <CardTitle className="text-lg flex items-center">
+                      <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
+                      Submission #{index + 1}
+                    </CardTitle>
+                    {new Date(deadline * 1000) < new Date() && submission.status === "approved" ? (
+                      <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
+                        Approved
+                      </Badge>
                     ) : (
-                      <button
-                        onClick={() => handleViewDetails(index, submission)}
-                        className="text-primary hover:underline flex items-center group"
-                      >
-                        <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
-                        <span className="font-medium">See Proof</span>
-                      </button>
+                      <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                        Pending
+                      </Badge>
                     )}
                   </div>
-                </div>
-
-                {submission.comments && (
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-1">Comments</p>
-                    <div className="bg-muted/20 p-3 rounded-md border border-border/50">
-                      <p className="whitespace-pre-line text-sm">{submission.comments}</p>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-1">Submitted by</p>
+                        <div className="flex items-center">
+                          <User className="h-4 w-4 mr-2 text-primary/70" />
+                          <p className="font-medium">{submission.submitter.slice(0, 6)}...{submission.submitter.slice(-4)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-1">Proof</p>
+                        {submission.proofCID ? (
+                          <a
+                            href={`https://gateway.pinata.cloud/ipfs/${submission.proofCID}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center group"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              const pinataUrl = `https://gateway.pinata.cloud/ipfs/${submission.proofCID}`
+                              const publicUrl = `https://ipfs.io/ipfs/${submission.proofCID}`
+                              
+                              fetch(pinataUrl)
+                                .then(response => {
+                                  if (response.ok) {
+                                    window.open(pinataUrl, '_blank')
+                                  } else {
+                                    window.open(publicUrl, '_blank')
+                                  }
+                                })
+                                .catch(() => {
+                                  window.open(publicUrl, '_blank')
+                                })
+                            }}
+                          >
+                            <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
+                            <span className="font-medium">View Proof</span>
+                          </a>
+                        ) : (
+                          <button
+                            onClick={() => handleViewDetails(index, submission)}
+                            className="text-primary hover:underline flex items-center group"
+                          >
+                            <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
+                            <span className="font-medium">See Proof</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                <div className="flex justify-between items-center p-2 bg-muted/10 rounded-md">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5">
-                      <ThumbsUp className={`h-4 w-4 ${submission.approvalCount > 0 ? 'text-green-500' : 'text-muted-foreground'}`} />
-                      <span className="text-sm font-medium">{submission.approvalCount}</span>
+                    {submission.comments && (
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground mb-1">Comments</p>
+                        <div className="bg-muted/20 p-3 rounded-md border border-border/50">
+                          <p className="whitespace-pre-line text-sm">{submission.comments}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center p-2 bg-muted/10 rounded-md">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5">
+                          <ThumbsUp className={`h-4 w-4 ${submission.approvalCount > 0 ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          <span className="text-sm font-medium">{submission.approvalCount}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <ThumbsDown className={`h-4 w-4 ${submission.rejectCount > 0 ? 'text-red-500' : 'text-muted-foreground'}`} />
+                          <span className="text-sm font-medium">{submission.rejectCount}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <ThumbsDown className={`h-4 w-4 ${submission.rejectCount > 0 ? 'text-red-500' : 'text-muted-foreground'}`} />
-                      <span className="text-sm font-medium">{submission.rejectCount}</span>
-                    </div>
-                  </div>
-                </div>
 
-                {isActive ? (
-                  <div className="flex gap-2">
-                    <Button
-                      className="flex-1"
-                      onClick={() => handleVote(index, true)}
-                      disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
-                    >
-                      <Check className="h-4 w-4 mr-2 text-green-500" />
-                      {hasVoted(index) ? "Already Voted" : "Approve"}
-                    </Button>
-                    <Button
-                      className="flex-1"
-                      onClick={() => handleVote(index, false)}
-                      disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
-                    >
-                      <X className="h-4 w-4 mr-2 text-red-500" />
-                      {hasVoted(index) ? "Already Voted" : "Reject"}
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md">
-                    Voting period has ended
-                  </div>
-                )}
+                    {isActive ? (
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1"
+                          onClick={() => handleVote(index, true)}
+                          disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
+                        >
+                          <Check className="h-4 w-4 mr-2 text-green-500" />
+                          {hasVoted(index) ? "Already Voted" : "Approve"}
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          onClick={() => handleVote(index, false)}
+                          disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
+                        >
+                          <X className="h-4 w-4 mr-2 text-red-500" />
+                          {hasVoted(index) ? "Already Voted" : "Reject"}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md">
+                        Voting period has ended
+                      </div>
+                    )}
 
-                <div className={!isActive ? "opacity-50 pointer-events-none" : ""}>
-                  <QualityCheckPanel
-                    submission={{
-                      id: Number(submission.id),
-                      bountyId: Number(bountyId),
-                      submitter: submission.submitter,
-                      proofCID: submission.proofCID,
-                      comments: submission.comments || ''
-                    }}
-                    onQualityCheck={(score, feedback) => {
-                      console.log('Quality check completed:', { score, feedback })
-                    }}
-                    isSubmitter={submission.submitter.toLowerCase() === address?.toLowerCase()}
-                    bountyAmount={rewardAmount}
-                    isApproved={submission.status === "approved"}
-                  />
-                </div>
-
-                {submission.status === "approved" && !isSubmissionCompleted(submission) && isCreator && (
-                  <div className={`mt-2 space-y-2 ${!isActive ? "opacity-50 pointer-events-none" : ""}`}>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        placeholder="Enter reward amount"
-                        value={submission.rewardAmount}
-                        onChange={() => {
-                          // Handle reward amount change
+                    <div className={!isActive ? "opacity-50 pointer-events-none" : ""}>
+                      <QualityCheckPanel
+                        submission={{
+                          id: Number(submission.id),
+                          bountyId: Number(bountyId),
+                          submitter: submission.submitter,
+                          proofCID: submission.proofCID,
+                          comments: submission.comments || ''
                         }}
-                        className="flex-1 px-3 py-2 border rounded-md text-sm"
-                        min="0"
-                        step="0.000000000000000001"
-                        disabled={!isActive}
+                        onQualityCheck={(score, feedback) => {
+                          console.log('Quality check completed:', { score, feedback })
+                        }}
+                        isSubmitter={submission.submitter.toLowerCase() === address?.toLowerCase()}
+                        bountyAmount={rewardAmount}
+                        isApproved={submission.status === "approved"}
                       />
-                      <Button
-                        size="sm"
-                        onClick={() => handleSetReward(index)}
-                        disabled={voting || !submission.rewardAmount || !isActive}
-                      >
-                        Set Reward
-                      </Button>
                     </div>
+
+                    {submission.status === "approved" && !isSubmissionCompleted(submission) && isCreator && (
+                      <div className={`mt-2 space-y-2 ${!isActive ? "opacity-50 pointer-events-none" : ""}`}>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            placeholder="Enter reward amount"
+                            value={submission.rewardAmount}
+                            onChange={() => {
+                              // Handle reward amount change
+                            }}
+                            className="flex-1 px-3 py-2 border rounded-md text-sm"
+                            min="0"
+                            step="0.000000000000000001"
+                            disabled={!isActive}
+                          />
+                          <Button
+                            size="sm"
+                            onClick={() => handleSetReward(index)}
+                            disabled={voting || !submission.rewardAmount || !isActive}
+                          >
+                            Set Reward
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!isActive && isCreator && (
+                      <div className={`text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md ${!isActive ? "opacity-50" : ""}`}>
+                        Voting period is active
+                      </div>
+                    )}
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => handleViewDetails(index, submission)}
+                    >
+                      <Info className="h-4 w-4 mr-2" />
+                      View Full Details
+                    </Button>
                   </div>
-                )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
 
-                {!isActive && isCreator && (
-                  <div className={`text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md ${!isActive ? "opacity-50" : ""}`}>
-                    Voting period is active
-                  </div>
-                )}
+          {transactionError && (
+            <Alert variant="destructive">
+              <AlertDescription>{transactionError}</AlertDescription>
+            </Alert>
+          )}
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => handleViewDetails(index, submission)}
-                >
-                  <Info className="h-4 w-4 mr-2" />
-                  View Full Details
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {transactionError && (
-        <Alert variant="destructive">
-          <AlertDescription>{transactionError}</AlertDescription>
-        </Alert>
-      )}
-
-      {submissions.some(sub => sub.status === "approved") && !isActive && isCreator && (
-        <Card className={`border-blue-200 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-800/50 ${!isActive ? "opacity-50" : ""}`}>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                  <Trophy className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-blue-800 dark:text-blue-300">Ready to Complete</h3>
-                  <p className="text-sm text-blue-700/90 dark:text-blue-400 mt-0.5">
-                    {!isActive ? "Voting period has ended. You can now complete the bounty and distribute rewards." : "Deadline has passed"}
-                  </p>
-                </div>
-              </div>
-              <Button
-                onClick={handleComplete}
-                disabled={!isActive}
-                className="bg-blue-500 hover:bg-blue-600 text-white"
-              >
-                Complete Bounty
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {selectedSubmission && (
-        <Card id="submission-details" className="mt-6 submission-details">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Submission Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {metadata ? (
-              <div className="space-y-6">
-                {metadata.description && (
-                  <div>
-                    <h3 className="text-lg font-medium mb-2 flex items-center text-foreground">
-                      <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
-                      Description
-                    </h3>
-                    <div className="bg-muted/10 p-3 rounded-md border">
-                      <p className="text-muted-foreground whitespace-pre-line text-sm leading-relaxed">
-                        {metadata.description}
+          {submissions.some(sub => sub.status === "approved") && !isActive && isCreator && (
+            <Card className={`border-blue-200 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-800/50 ${!isActive ? "opacity-50" : ""}`}>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                      <Trophy className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-blue-800 dark:text-blue-300">Ready to Complete</h3>
+                      <p className="text-sm text-blue-700/90 dark:text-blue-400 mt-0.5">
+                        {!isActive ? "Voting period has ended. You can now complete the bounty and distribute rewards." : "Deadline has passed"}
                       </p>
                     </div>
                   </div>
-                )}
+                  <Button
+                    onClick={handleComplete}
+                    disabled={!isActive}
+                    className="bg-blue-500 hover:bg-blue-600 text-white"
+                  >
+                    Complete Bounty
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-                <Separator />
+          {selectedSubmission && (
+            <Card id="submission-details" className="mt-6 submission-details">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Submission Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {metadata ? (
+                  <div className="space-y-6">
+                    {metadata.description && (
+                      <div>
+                        <h3 className="text-lg font-medium mb-2 flex items-center text-foreground">
+                          <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
+                          Description
+                        </h3>
+                        <div className="bg-muted/10 p-3 rounded-md border">
+                          <p className="text-muted-foreground whitespace-pre-line text-sm leading-relaxed">
+                            {metadata.description}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
-                {metadata.files && metadata.files.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-medium mb-2 flex items-center text-foreground">
-                      <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
-                      Files
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {metadata.files.map((file, index) => (
-                        <FileLink key={index} file={file} />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                    <Separator />
 
-                {metadata.links && metadata.links.length > 0 && (
-                  <>
-                    <Separator className="my-4" />
-                    <div>
-                      <h3 className="text-lg font-medium mb-2 flex items-center text-foreground">
-                        <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
-                        Links
-                      </h3>
-                      <div className="space-y-2">
-                        {metadata.links.map((link, index) => (
-                          <a
-                            key={index}
-                            href={link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center p-2 border rounded-md hover:bg-accent/30 transition-colors group"
-                          >
-                            <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
-                              <LinkIcon className="h-4 w-4 text-primary" />
-                            </div>
-                            <div className="flex-1 truncate">
-                              <p className="font-medium truncate text-sm">{link}</p>
-                            </div>
-                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground ml-2 group-hover:text-primary transition-colors" />
-                          </a>
-                        ))}
+                    {metadata.files && metadata.files.length > 0 && (
+                      <div>
+                        <h3 className="text-lg font-medium mb-2 flex items-center text-foreground">
+                          <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
+                          Files
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {metadata.files.map((file, index) => (
+                            <FileLink key={index} file={file} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {metadata.links && metadata.links.length > 0 && (
+                      <>
+                        <Separator className="my-4" />
+                        <div>
+                          <h3 className="text-lg font-medium mb-2 flex items-center text-foreground">
+                            <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
+                            Links
+                          </h3>
+                          <div className="space-y-2">
+                            {metadata.links.map((link, index) => (
+                              <a
+                                key={index}
+                                href={link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center p-2 border rounded-md hover:bg-accent/30 transition-colors group"
+                              >
+                                <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
+                                  <LinkIcon className="h-4 w-4 text-primary" />
+                                </div>
+                                <div className="flex-1 truncate">
+                                  <p className="font-medium truncate text-sm">{link}</p>
+                                </div>
+                                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground ml-2 group-hover:text-primary transition-colors" />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    <Separator />
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/10 p-3 rounded-md border">
+                      <div className="flex items-center">
+                        <User className="h-4 w-4 text-primary/70 mr-2" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Submitted by</p>
+                          <p className="font-medium text-sm">{metadata.submitter.slice(0, 6)}...{metadata.submitter.slice(-4)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center">
+                        <Calendar className="h-4 w-4 text-primary/70 mr-2" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Submission date</p>
+                          <p className="font-medium text-sm">{new Date(metadata.timestamp * 1000).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Status</p>
+                          {!isActive && selectedSubmission.status === "approved" ? (
+                            <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
+                              Approved
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                              Pending
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </>
+                  </div>
+                ) : (
+                  <div className="text-center py-16">
+                    <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4 opacity-50" />
+                    <p className="text-muted-foreground">No details available for this submission</p>
+                  </div>
                 )}
-
-                <Separator />
-
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-muted/10 p-3 rounded-md border">
-                  <div className="flex items-center">
-                    <User className="h-4 w-4 text-primary/70 mr-2" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Submitted by</p>
-                      <p className="font-medium text-sm">{metadata.submitter.slice(0, 6)}...{metadata.submitter.slice(-4)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <Calendar className="h-4 w-4 text-primary/70 mr-2" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Submission date</p>
-                      <p className="font-medium text-sm">{new Date(metadata.timestamp * 1000).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Status</p>
-                      {!isActive && selectedSubmission.status === "approved" ? (
-                        <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
-                          Approved
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
-                          Pending
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-16">
-                <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4 opacity-50" />
-                <p className="text-muted-foreground">No details available for this submission</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-    </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
