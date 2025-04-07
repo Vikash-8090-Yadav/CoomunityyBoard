@@ -14,6 +14,7 @@ import { TransactionProgress } from "@/components/ui/transaction-progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import Image from "next/image"
 import QualityCheckPanel from './quality-check-panel'
+import { useToast } from "@/components/ui/use-toast"
 
 type SubmissionData = {
   id: string
@@ -52,6 +53,41 @@ interface VerificationPanelProps {
   proofRequirements: string
 }
 
+// Add IPFS gateway configuration
+const IPFS_GATEWAY = "https://ipfs.io/ipfs/"
+
+interface TransactionProgressProps {
+  stage: "pending" | "submitted" | "confirmed" | "error";
+  transactionHash?: string | null;
+}
+
+interface IPFSMetadata {
+  name: string;
+  type: string;
+  size: number;
+  description?: string;
+  files?: Array<{
+    name: string;
+    cid: string;
+    url: string;
+  }>;
+  links?: string[];
+  submitter?: string;
+  timestamp?: number;
+}
+
+// Add metadata fetching function
+const fetchMetadata = async (ipfsHash: string): Promise<IPFSMetadata | null> => {
+  try {
+    const response = await fetch(`${IPFS_GATEWAY}${ipfsHash}`);
+    if (!response.ok) throw new Error('Failed to fetch metadata');
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching metadata:', error);
+    return null;
+  }
+};
+
 export default function VerificationPanel({ 
   bountyId, 
   bountyCreator, 
@@ -62,22 +98,45 @@ export default function VerificationPanel({
   const { connected, provider, address } = useWallet()
   const [submissions, setSubmissions] = useState<SubmissionData[]>([])
   const [voting, setVoting] = useState(false)
-  const [transactionStage, setTransactionStage] = useState<"submitted" | "pending" | "confirmed" | "error">("submitted")
+  const [loading, setLoading] = useState(true)
+  const [settingReward, setSettingReward] = useState(false)
+  const [transactionStage, setTransactionStage] = useState<"pending" | "submitted" | "confirmed" | "error">("submitted")
   const [transactionError, setTransactionError] = useState<string | null>(null)
   const [selectedSubmission, setSelectedSubmission] = useState<SubmissionData | null>(null)
-  const [metadata, setMetadata] = useState<SubmissionMetadata | null>(null)
+  const [metadata, setMetadata] = useState<IPFSMetadata | null>(null)
   const [votedSubmissions] = useState<Set<string>>(new Set())
+  const [rewardInputs, setRewardInputs] = useState<{ [key: string]: string }>({})
+  const [isActive, setIsActive] = useState(() => {
+    const currentTime = new Date().getTime()
+    const deadlineTime = new Date(deadline * 1000).getTime()
+    return currentTime < deadlineTime
+  })
+  const [detailsSection, setDetailsSection] = useState<number | null>(null)
+
+  // Add deadline check effect
+  useEffect(() => {
+    const checkDeadline = () => {
+      const currentTime = new Date().getTime()
+      const deadlineTime = new Date(deadline * 1000).getTime()
+      setIsActive(currentTime < deadlineTime)
+    }
+
+    // Check immediately
+    checkDeadline()
+
+    // Check every minute
+    const interval = setInterval(checkDeadline, 60000)
+
+    return () => clearInterval(interval)
+  }, [deadline])
 
   const fetchSubmissions = useCallback(async () => {
     try {
-      console.log('Fetching submissions for bounty:', bountyId)
-
+      setLoading(true)
       const provider = new ethers.providers.JsonRpcProvider('https://evmtestnet.confluxrpc.com')
       const contract = new ethers.Contract(communityAddress, abi.abi, provider)
 
       const submissionCount = await contract.getSubmissionCount(bountyId)
-      console.log('Submission count:', submissionCount.toString())
-
       const submissionPromises = Array.from({ length: submissionCount }, (_, i) => 
         contract.getSubmission(bountyId, i).catch((error: Error) => {
           console.error(`Error fetching submission ${i}:`, error)
@@ -116,15 +175,15 @@ export default function VerificationPanel({
           }
         })
 
-      console.log('Fetched submissions:', submissionsData)
       setSubmissions(submissionsData)
     } catch (err) {
       console.error("Error fetching submissions:", err)
+    } finally {
+      setLoading(false)
     }
   }, [bountyId])
 
   useEffect(() => {
-    console.log('Component mounted, fetching submissions...')
     fetchSubmissions()
   }, [fetchSubmissions])
 
@@ -144,6 +203,11 @@ export default function VerificationPanel({
       return
     }
 
+    if (votedSubmissions.has(submissions[submissionIndex].id)) {
+      console.error("You have already voted on this submission")
+      return
+    }
+
     try {
       setVoting(true)
       setTransactionStage("submitted")
@@ -158,6 +222,8 @@ export default function VerificationPanel({
       console.log("Vote transaction confirmed")
       setTransactionStage("confirmed")
 
+      votedSubmissions.add(submissions[submissionIndex].id)
+
       fetchSubmissions()
     } catch (error: unknown) {
       console.error("Error voting:", error)
@@ -168,19 +234,29 @@ export default function VerificationPanel({
     }
   }
 
+  const handleRewardInputChange = (submissionId: string, value: string) => {
+    setRewardInputs(prev => ({
+      ...prev,
+      [submissionId]: value
+    }))
+  }
+
   const handleSetReward = async (submissionIndex: number) => {
     if (!connected || !provider) {
       console.error("Please connect your wallet first")
       return
     }
 
-    const rewardAmount = submissions[submissionIndex].rewardAmount
+    const submission = submissions[submissionIndex]
+    const rewardAmount = rewardInputs[submission.id] || submission.rewardAmount
+
     if (!rewardAmount || isNaN(Number(rewardAmount)) || Number(rewardAmount) <= 0) {
       console.error("Please enter a valid reward amount")
       return
     }
 
     try {
+      setSettingReward(true)
       setTransactionStage("submitted")
       setTransactionError(null)
 
@@ -200,11 +276,20 @@ export default function VerificationPanel({
       console.log("Reward sent successfully")
       setTransactionStage("confirmed")
 
+      // Clear the input after successful reward set
+      setRewardInputs(prev => {
+        const newInputs = { ...prev }
+        delete newInputs[submission.id]
+        return newInputs
+      })
+
       fetchSubmissions()
     } catch (error: unknown) {
       console.error("Error sending reward:", error)
       setTransactionStage("error")
       setTransactionError(error instanceof Error ? error.message : "Failed to send reward. Please try again.")
+    } finally {
+      setSettingReward(false)
     }
   }
 
@@ -247,10 +332,7 @@ export default function VerificationPanel({
 
   const loadSubmissionMetadata = async (submission: SubmissionData) => {
     try {
-      console.log("Metadata CID to fetch:", submission.proofCID)
-
       if (!submission.proofCID) {
-        console.error("No proof CID found")
         setTransactionError("No proof identifier found")
         return
       }
@@ -271,11 +353,27 @@ export default function VerificationPanel({
           clearTimeout(timeoutId)
           
           if (response.ok) {
-            metadata = await response.json()
+            // Check if the response is JSON
+            const contentType = response.headers.get('content-type')
+            if (contentType && contentType.includes('application/json')) {
+              metadata = await response.json()
+            } else {
+              // If it's not JSON, create a basic metadata object
+              metadata = {
+                name: "Submission File",
+                type: contentType || "unknown",
+                size: response.headers.get('content-length') || 0,
+                description: "Binary file submission",
+                files: [{
+                  name: "Submission File",
+                  cid: submission.proofCID,
+                  url: gateway
+                }]
+              }
+            }
             break
           }
         } catch (err) {
-          console.warn(`Failed to fetch from ${gateway}:`, err)
           continue
         }
       }
@@ -284,21 +382,15 @@ export default function VerificationPanel({
         throw new Error("Failed to fetch metadata from all gateways")
       }
 
-      console.log("Raw metadata from IPFS:", metadata)
-
       setMetadata({
-        title: metadata.title || "Untitled Submission",
+        name: metadata.name || "Untitled Submission",
+        type: metadata.type || "unknown",
+        size: metadata.size || 0,
         description: metadata.description || "",
-        submitter: metadata.submitter,
-        timestamp: metadata.timestamp,
-        files: Array.isArray(metadata.files)
-          ? metadata.files.map((file: { name: string; cid: string }) => ({
-              name: file.name,
-              cid: file.cid,
-              url: `https://moccasin-real-stork-472.mypinata.cloud/ipfs/${file.cid}`,
-            }))
-          : [],
+        files: metadata.files || [],
         links: metadata.links || [],
+        submitter: metadata.submitter,
+        timestamp: metadata.timestamp
       })
     } catch (error: unknown) {
       console.error("Error loading metadata:", error)
@@ -361,21 +453,19 @@ export default function VerificationPanel({
         {isImage && showPreview && (
           <div className="mt-2 rounded-md overflow-hidden border">
             <Image
-              src={`https://moccasin-real-stork-472.mypinata.cloud/ipfs/${file.cid}`}
+              src={`${IPFS_GATEWAY}${file.cid}`}
               alt={file.name}
               width={500}
-              height={250}
-              className="w-full h-auto object-contain max-h-[250px]"
-              onError={() => setError("Failed to load image")}
+              height={300}
+              className="w-full h-auto"
+              unoptimized
             />
-            {error && <div className="p-2 text-xs text-red-500 bg-red-50">{error}</div>}
           </div>
         )}
       </div>
     )
   }
 
-  const isActive = new Date(deadline * 1000) > new Date()
   const isCreator = connected && address?.toLowerCase() === bountyCreator.toLowerCase()
   const isSubmissionCompleted = (submission: SubmissionData) => {
     return submission.status === "approved" && submission.rewardAmount !== "0" && submission.rewardAmount !== "0.0"
@@ -396,7 +486,6 @@ export default function VerificationPanel({
   }, [deadline, isActive])
 
   const handleViewDetails = (index: number, submission: SubmissionData) => {
-    console.log("Viewing details for submission:", submission)
     setSelectedSubmission(submission)
     loadSubmissionMetadata(submission)
 
@@ -411,47 +500,101 @@ export default function VerificationPanel({
     })
   }
 
-  if (voting) {
+  if (loading) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="text-center py-6">
-            <TransactionProgress 
-              stage={transactionStage} 
-              errorMessage={transactionError || undefined}
-            />
-          </div>
+      <Card className="border-muted">
+        <CardContent className="flex flex-col items-center justify-center p-12">
+          <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+          <p className="text-muted-foreground">Loading verification data...</p>
         </CardContent>
       </Card>
     )
   }
 
+  if (settingReward) {
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/50 z-50" />
+        <div className="fixed top-4 right-4 z-50">
+          <TransactionProgress 
+            stage={transactionStage}
+            errorMessage={transactionError || undefined}
+            onClose={() => {
+              setTransactionError(null);
+            }}
+          />
+        </div>
+        <Card className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90%] max-w-md">
+          <CardContent className="flex flex-col items-center justify-center p-8">
+            <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+            <p className="text-muted-foreground mb-4">Setting reward...</p>
+            {transactionError && (
+              <p className="text-sm text-red-500 mt-4">{transactionError}</p>
+            )}
+          </CardContent>
+        </Card>
+      </>
+    )
+  }
+
+  if (voting) {
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/50 z-50" />
+        <div className="fixed top-4 right-4 z-50">
+          <TransactionProgress 
+            stage={transactionStage}
+            errorMessage={transactionError || undefined}
+            onClose={() => {
+              setTransactionError(null);
+            }}
+          />
+        </div>
+        <Card className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90%] max-w-md">
+          <CardContent className="flex flex-col items-center justify-center p-8">
+            <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+            <p className="text-muted-foreground">Processing your vote...</p>
+          </CardContent>
+        </Card>
+      </>
+    )
+  }
+
+  if (transactionStage === "pending") {
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/50 z-50" />
+        <div className="fixed top-4 right-4 z-50">
+          <TransactionProgress 
+            stage={transactionStage}
+            errorMessage={transactionError || undefined}
+            onClose={() => {
+              setTransactionError(null);
+            }}
+          />
+        </div>
+        <Card className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90%] max-w-md">
+          <CardContent className="flex flex-col items-center justify-center p-8">
+            <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+            <p className="text-muted-foreground">Processing transaction...</p>
+          </CardContent>
+        </Card>
+      </>
+    )
+  }
+
   return (
     <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span>Verification Panel</span>
-          <Badge variant="outline" className="ml-2">
-            {connected ? "Connected" : "Not Connected"}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <div className="flex items-center">
-              <User className="mr-2 h-4 w-4" />
-              <span>Creator: {bountyCreator}</span>
-            </div>
-            <div className="flex items-center">
-              <Calendar className="mr-2 h-4 w-4" />
-              <span>Deadline: {new Date(deadline * 1000).toLocaleDateString()}</span>
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">Proof Requirements:</h4>
-            <p className="text-sm text-muted-foreground whitespace-pre-line">{proofRequirements}</p>
+          <div className="bg-muted/10 p-4 rounded-md border border-muted">
+            <h3 className="font-medium mb-2 flex items-center gap-2">
+              <Info className="h-4 w-4 text-primary" />
+              How to Verify Submissions
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Welcome to the verification process! First, review each submission's details and proof files. Use the Quality Check tool to analyze submission quality, then vote Approve or Reject based on your assessment. {isCreator ? "As the bounty creator, you can set rewards for approved submissions." : "The bounty creator will set rewards for approved submissions."} {isActive ? "Voting is currently active until the deadline." : "The voting period has ended."}
+            </p>
           </div>
 
           <Separator />
@@ -470,9 +613,17 @@ export default function VerificationPanel({
                       <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
                       Submission #{index + 1}
                     </CardTitle>
-                    {new Date(deadline * 1000) < new Date() && submission.status === "approved" ? (
+                    {submission.isWinner ? (
+                      <Badge className="bg-yellow-500/15 text-yellow-600 hover:bg-yellow-500/20 border-yellow-500/20">
+                        Winner
+                      </Badge>
+                    ) : submission.status === "approved" ? (
                       <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
                         Approved
+                      </Badge>
+                    ) : submission.status === "rejected" ? (
+                      <Badge className="bg-red-500/15 text-red-600 hover:bg-red-500/20 border-red-500/20">
+                        Rejected
                       </Badge>
                     ) : (
                       <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
@@ -492,43 +643,15 @@ export default function VerificationPanel({
                         </div>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Proof</p>
-                        {submission.proofCID ? (
-                          <a
-                            href={`https://gateway.pinata.cloud/ipfs/${submission.proofCID}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline flex items-center group"
-                            onClick={(e) => {
-                              e.preventDefault()
-                              const pinataUrl = `https://gateway.pinata.cloud/ipfs/${submission.proofCID}`
-                              const publicUrl = `https://ipfs.io/ipfs/${submission.proofCID}`
-                              
-                              fetch(pinataUrl)
-                                .then(response => {
-                                  if (response.ok) {
-                                    window.open(pinataUrl, '_blank')
-                                  } else {
-                                    window.open(publicUrl, '_blank')
-                                  }
-                                })
-                                .catch(() => {
-                                  window.open(publicUrl, '_blank')
-                                })
-                            }}
-                          >
-                            <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
-                            <span className="font-medium">View Proof</span>
-                          </a>
-                        ) : (
-                          <button
-                            onClick={() => handleViewDetails(index, submission)}
-                            className="text-primary hover:underline flex items-center group"
-                          >
-                            <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
-                            <span className="font-medium">See Proof</span>
-                          </button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => handleViewDetails(index, submission)}
+                        >
+                          <Info className="h-4 w-4 mr-2" />
+                          View Full Details
+                        </Button>
                       </div>
                     </div>
 
@@ -552,34 +675,56 @@ export default function VerificationPanel({
                           <span className="text-sm font-medium">{submission.rejectCount}</span>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        {submission.rewardAmount !== "0" ? (
+                          <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                            <Trophy className="h-3.5 w-3.5" />
+                            <span className="font-medium">
+                              {ethers.utils.formatEther(submission.rewardAmount)} ETH
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <Trophy className="h-3.5 w-3.5" />
+                            <span>No reward set</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    {isActive ? (
+                    {!isActive ? (
+                      <div className="text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md border border-muted">
+                        <div className="flex items-center justify-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          <span>Voting period has ended</span>
+                        </div>
+                      </div>
+                    ) : (
                       <div className="flex gap-2">
                         <Button
-                          className="flex-1"
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 h-8"
                           onClick={() => handleVote(index, true)}
                           disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
                         >
-                          <Check className="h-4 w-4 mr-2 text-green-500" />
-                          {hasVoted(index) ? "Already Voted" : "Approve"}
+                          <Check className="h-3.5 w-3.5 mr-1.5 text-green-500" />
+                          {hasVoted(index) ? "Voted" : "Approve"}
                         </Button>
                         <Button
-                          className="flex-1"
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 h-8"
                           onClick={() => handleVote(index, false)}
                           disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
                         >
-                          <X className="h-4 w-4 mr-2 text-red-500" />
-                          {hasVoted(index) ? "Already Voted" : "Reject"}
+                          <X className="h-3.5 w-3.5 mr-1.5 text-red-500" />
+                          {hasVoted(index) ? "Voted" : "Reject"}
                         </Button>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md">
-                        Voting period has ended
                       </div>
                     )}
 
-                    <div className={!isActive ? "opacity-50 pointer-events-none" : ""}>
+                    <div>
                       <QualityCheckPanel
                         submission={{
                           id: Number(submission.id),
@@ -594,50 +739,50 @@ export default function VerificationPanel({
                         isSubmitter={submission.submitter.toLowerCase() === address?.toLowerCase()}
                         bountyAmount={rewardAmount}
                         isApproved={submission.status === "approved"}
+                        disabled={!isActive}
                       />
                     </div>
 
                     {submission.status === "approved" && !isSubmissionCompleted(submission) && isCreator && (
-                      <div className={`mt-2 space-y-2 ${!isActive ? "opacity-50 pointer-events-none" : ""}`}>
+                      <div className="mt-4 p-3 bg-muted/10 rounded-md border">
+                        <p className="text-sm font-medium text-muted-foreground mb-2">Set Reward Amount</p>
                         <div className="flex gap-2">
                           <input
                             type="number"
-                            placeholder="Enter reward amount"
-                            value={submission.rewardAmount}
-                            onChange={() => {
-                              // Handle reward amount change
+                            placeholder="Enter reward amount (e.g. 0.1)"
+                            value={rewardInputs[submission.id] ?? submission.rewardAmount}
+                            onChange={(e) => handleRewardInputChange(submission.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                handleSetReward(index)
+                              }
                             }}
                             className="flex-1 px-3 py-2 border rounded-md text-sm"
                             min="0"
                             step="0.000000000000000001"
-                            disabled={!isActive}
+                            disabled={settingReward}
                           />
                           <Button
                             size="sm"
                             onClick={() => handleSetReward(index)}
-                            disabled={voting || !submission.rewardAmount || !isActive}
+                            disabled={settingReward || !rewardInputs[submission.id] || Number(rewardInputs[submission.id]) <= 0}
                           >
-                            Set Reward
+                            {settingReward ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                Setting...
+                              </>
+                            ) : (
+                              'Set Reward'
+                            )}
                           </Button>
                         </div>
+                        {rewardInputs[submission.id] && Number(rewardInputs[submission.id]) <= 0 && (
+                          <p className="text-xs text-red-500 mt-1">Please enter a reward amount greater than 0</p>
+                        )}
                       </div>
                     )}
-
-                    {!isActive && isCreator && (
-                      <div className={`text-sm text-muted-foreground text-center py-2 bg-muted/10 rounded-md ${!isActive ? "opacity-50" : ""}`}>
-                        Voting period is active
-                      </div>
-                    )}
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => handleViewDetails(index, submission)}
-                    >
-                      <Info className="h-4 w-4 mr-2" />
-                      View Full Details
-                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -756,22 +901,25 @@ export default function VerificationPanel({
                         <User className="h-4 w-4 text-primary/70 mr-2" />
                         <div>
                           <p className="text-xs text-muted-foreground">Submitted by</p>
-                          <p className="font-medium text-sm">{metadata.submitter.slice(0, 6)}...{metadata.submitter.slice(-4)}</p>
+                          <p className="font-medium text-sm">{selectedSubmission.submitter.slice(0, 6)}...{selectedSubmission.submitter.slice(-4)}</p>
                         </div>
                       </div>
-                      <div className="flex items-center">
-                        <Calendar className="h-4 w-4 text-primary/70 mr-2" />
-                        <div>
-                          <p className="text-xs text-muted-foreground">Submission date</p>
-                          <p className="font-medium text-sm">{new Date(metadata.timestamp * 1000).toLocaleDateString()}</p>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-muted-foreground">Submitted</p>
+                        <p className="font-medium text-sm">
+                          {new Date(selectedSubmission.timestamp * 1000).toLocaleString()}
+                        </p>
                       </div>
                       <div className="flex items-center">
                         <div>
                           <p className="text-xs text-muted-foreground">Status</p>
-                          {!isActive && selectedSubmission.status === "approved" ? (
+                          {selectedSubmission.status === "approved" ? (
                             <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
                               Approved
+                            </Badge>
+                          ) : selectedSubmission.status === "rejected" ? (
+                            <Badge className="bg-red-500/15 text-red-600 hover:bg-red-500/20 border-red-500/20">
+                              Rejected
                             </Badge>
                           ) : (
                             <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
@@ -785,7 +933,7 @@ export default function VerificationPanel({
                 ) : (
                   <div className="text-center py-16">
                     <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4 opacity-50" />
-                    <p className="text-muted-foreground">No details available for this submission</p>
+                    <p className="text-muted-foreground">Loading submission details...</p>
                   </div>
                 )}
               </CardContent>
@@ -796,4 +944,5 @@ export default function VerificationPanel({
     </Card>
   )
 }
+
 

@@ -7,6 +7,8 @@ import { ethers } from "ethers"
 import { communityAddress } from "@/config"
 import abi from "@/abi/CommunityBountyBoard.json"
 import SetRewardForm from "./set-reward-form"
+import { Loader2 } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 
 interface SubmissionDetailsProps {
   bountyId: number
@@ -67,11 +69,25 @@ export default function SubmissionDetails({
   }, [bountyId, submissionId, provider])
 
   if (loading) {
-    return <div>Loading submission details...</div>
+    return (
+      <Card className="border-muted">
+        <CardContent className="flex flex-col items-center justify-center p-12">
+          <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+          <p className="text-muted-foreground">Loading submission details...</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (!submission) {
-    return <div>Submission not found</div>
+    return (
+      <Card className="border-destructive">
+        <CardContent className="flex flex-col items-center justify-center p-12">
+          <AlertTriangle className="h-10 w-10 text-destructive mb-4" />
+          <p className="text-destructive">Submission not found</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   const isDeadlinePassed = Math.floor(Date.now() / 1000) > deadline

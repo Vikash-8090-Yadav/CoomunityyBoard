@@ -1,8 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: ["ipfs.infura.io", "sal-dapp.infura-ipfs.io"]
-  }
+    domains: ['ipfs.io'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'ipfs.io',
+        pathname: '/ipfs/**',
+      },
+    ],
+  },
 };
 
 module.exports = nextConfig; 

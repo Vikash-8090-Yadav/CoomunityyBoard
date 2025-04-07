@@ -53,13 +53,23 @@ export default function BountyAISuggestions({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get suggestions');
+        const errorData = await response.json();
+        if (response.status === 500) {
+          throw new Error('AI service is not properly configured. Please check your OpenAI API key.');
+        }
+        throw new Error(errorData.error || 'Failed to get suggestions');
       }
 
       const data = await response.json();
       setSuggestions(data);
     } catch (error: unknown) {
       console.error('Error getting suggestions:', error);
+      if (error instanceof Error) {
+        // Show a more user-friendly error message
+        alert(error.message);
+      } else {
+        alert('An unexpected error occurred while getting AI suggestions. Please try again later.');
+      }
     } finally {
       setLoading(false);
     }

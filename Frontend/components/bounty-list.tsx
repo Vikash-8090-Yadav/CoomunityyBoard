@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useBounty } from "@/context/bounty-context"
-import { formatUnits } from "ethers/lib/utils"
-import { Calendar, Clock, Award } from "lucide-react"
+import { formatUnits, formatEther } from "ethers/lib/utils"
+import { Calendar, Clock, Award, Loader2 } from "lucide-react"
 import type { Bounty } from "@/context/bounty-context"
 
 export default function BountyList() {
@@ -76,7 +76,14 @@ export default function BountyList() {
   }
 
   if (loading) {
-    return <div className="flex justify-center p-8">Loading bounties...</div>
+    return (
+      <Card className="border-muted">
+        <CardContent className="flex flex-col items-center justify-center p-12">
+          <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+          <p className="text-muted-foreground">Loading bounties...</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (error) {
@@ -126,7 +133,7 @@ export default function BountyList() {
                 <div className="space-y-2">
                   <div className="flex items-center text-sm">
                     <Award className="mr-2 h-4 w-4" />
-                    <span>{bounty.reward ? `${formatUnits(bounty.reward.toString(), 18)} ETH` : 'Reward not specified'}</span>
+                    <span>{bounty.reward ? `${formatEther(bounty.reward)} ETH` : 'Reward not specified'}</span>
                   </div>
                   <div className="flex items-center text-sm">
                     <Calendar className="mr-2 h-4 w-4" />

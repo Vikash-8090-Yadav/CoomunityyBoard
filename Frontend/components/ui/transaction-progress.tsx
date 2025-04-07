@@ -1,12 +1,13 @@
-import { Check, Loader2, AlertCircle } from "lucide-react"
+import { Check, Loader2, AlertCircle, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface TransactionProgressProps {
   stage: "submitted" | "pending" | "confirmed" | "error"
   errorMessage?: string
+  onClose?: () => void
 }
 
-export function TransactionProgress({ stage, errorMessage }: TransactionProgressProps) {
+export function TransactionProgress({ stage, errorMessage, onClose }: TransactionProgressProps) {
   if (stage === "error") {
     return (
       <div className="fixed top-4 right-4 z-50 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-red-200 dark:border-red-800 p-4 transition-all duration-300 transform animate-in fade-in slide-in-from-right">
@@ -14,9 +15,19 @@ export function TransactionProgress({ stage, errorMessage }: TransactionProgress
           <div className="flex-shrink-0">
             <AlertCircle className="h-5 w-5 text-red-500" />
           </div>
-          <div>
-            <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Transaction Failed</h3>
-            <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between items-start">
+              <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Transaction Failed</h3>
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-sm text-red-600 dark:text-red-400 break-words">{errorMessage}</p>
           </div>
         </div>
       </div>
@@ -46,9 +57,9 @@ export function TransactionProgress({ stage, errorMessage }: TransactionProgress
               <div className="h-4 w-4 rounded-full bg-gray-300 dark:bg-gray-600" />
             )}
           </div>
-          <div className="ml-3">
-            <p className="text-sm font-medium dark:text-gray-200">Transaction Submitted</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Waiting for confirmation</p>
+          <div className="ml-3 flex-1 min-w-0">
+            <p className="text-sm font-medium dark:text-gray-200 truncate">Transaction Submitted</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Waiting for confirmation</p>
           </div>
         </div>
 
@@ -80,9 +91,9 @@ export function TransactionProgress({ stage, errorMessage }: TransactionProgress
               <div className="h-4 w-4 rounded-full bg-gray-300 dark:bg-gray-600" />
             )}
           </div>
-          <div className="ml-3">
-            <p className="text-sm font-medium dark:text-gray-200">Transaction Pending</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Confirming on blockchain</p>
+          <div className="ml-3 flex-1 min-w-0">
+            <p className="text-sm font-medium dark:text-gray-200 truncate">Transaction Pending</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Confirming on blockchain</p>
           </div>
         </div>
 
@@ -110,9 +121,9 @@ export function TransactionProgress({ stage, errorMessage }: TransactionProgress
               <div className="h-4 w-4 rounded-full bg-gray-300 dark:bg-gray-600" />
             )}
           </div>
-          <div className="ml-3">
-            <p className="text-sm font-medium dark:text-gray-200">Transaction Confirmed</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Transaction completed successfully</p>
+          <div className="ml-3 flex-1 min-w-0">
+            <p className="text-sm font-medium dark:text-gray-200 truncate">Transaction Confirmed</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Transaction completed successfully</p>
           </div>
         </div>
       </div>

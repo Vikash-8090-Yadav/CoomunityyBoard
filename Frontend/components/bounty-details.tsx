@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -15,6 +15,8 @@ import VerificationPanel from "@/components/verification-panel"
 import { formatDistanceToNow } from "date-fns"
 import type { Bounty as BountyType, Submission as SubmissionType } from "@/types/bounty"
 import CollapsibleSubmitProof from "./collapsible-submit-proof"
+import { Input } from "@/components/ui/input"
+import { TransactionProgress } from "@/components/ui/transaction-progress"
 
 interface BountyDetailsProps {
   id: string
@@ -23,24 +25,30 @@ interface BountyDetailsProps {
 export default function BountyDetails({ id }: BountyDetailsProps) {
   const router = useRouter()
   const { connected, address, chainId } = useWallet()
-  const { getBountyDetails } = useBounty()
+  const { getBountyDetails, setSubmissionReward, completeBounty } = useBounty()
 
   const [bounty, setBounty] = useState<BountyType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitProofOpen, setIsSubmitProofOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("details")
+  const [showSubmitProof, setShowSubmitProof] = useState(false)
+  const [showRewardForm, setShowRewardForm] = useState(false)
+  const [rewardAmount, setRewardAmount] = useState("")
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null)
+  const [transactionHash, setTransactionHash] = useState<string | null>(null)
+  const [transactionStage, setTransactionStage] = useState<"idle" | "submitted" | "pending" | "confirmed" | "error">("idle")
 
-  // Add useEffect for tab persistence
+  // Load saved tab preference from localStorage
   useEffect(() => {
     const storedTab = localStorage.getItem('bounty-active-tab')
     if (storedTab) {
       setActiveTab(storedTab)
-      // Clear the stored preference after using it
       localStorage.removeItem('bounty-active-tab')
     }
   }, [])
 
+  // Fetch bounty details
   const loadBounty = useCallback(async () => {
     if (!connected || !id) return
 
@@ -67,7 +75,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
             id: sub.id,
             bountyId: Number(id),
             submitter: sub.submitter,
-            rewardAmount: formatEther(details.reward),
+            rewardAmount: formatEther(sub.rewardAmount || "0"),
             rewardShare: sub.rewardShare,
             ipfsProofHash: sub.ipfsProofHash,
             timestamp: sub.timestamp,
@@ -95,48 +103,19 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
     loadBounty()
   }, [loadBounty])
 
+  // Helper functions
   const formatDate = (timestamp: number): string => {
     return new Date(timestamp * 1000).toLocaleDateString()
   }
 
   const getStatusBadge = (status: number) => {
     switch (status) {
-      case 0:
-        return (
-          <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">Active</Badge>
-        )
-      case 1:
-        return <Badge className="bg-blue-500/15 text-blue-600 hover:bg-blue-500/20 border-blue-500/20">Completed</Badge>
-      case 2:
-        return <Badge className="bg-red-500/15 text-red-600 hover:bg-red-500/20 border-red-500/20">Cancelled</Badge>
-      default:
-        return <Badge variant="outline">Unknown</Badge>
+      case 0: return <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">Active</Badge>
+      case 1: return <Badge className="bg-blue-500/15 text-blue-600 hover:bg-blue-500/20 border-blue-500/20">Completed</Badge>
+      case 2: return <Badge className="bg-red-500/15 text-red-600 hover:bg-red-500/20 border-red-500/20">Cancelled</Badge>
+      default: return <Badge variant="outline">Unknown</Badge>
     }
   }
-
-  const isCreator = bounty && address && bounty.creator.toLowerCase() === address?.toLowerCase()
-  const isActive = bounty?.status === 0
-  const isExpired = bounty?.deadline ? bounty.deadline * 1000 < Date.now() : false
-
-  const deadline = new Date((bounty?.deadline ?? 0) * 1000)
-  const timeToDeadline = formatDistanceToNow(deadline, { addSuffix: true })
-
-  // Debug logging
-  useEffect(() => {
-    if (bounty) {
-      console.log("Submit Button Conditions:", {
-        isActive,
-        connected,
-        isCreator,
-        status: bounty.status,
-        userAddress: address,
-        creatorAddress: bounty.creator,
-        bountyDeadline: bounty.deadline * 1000,
-        currentTime: Date.now(),
-        isExpired,
-      })
-    }
-  }, [bounty, connected, address, isActive, isCreator, isExpired])
 
   const handleTabChange = (value: string) => {
     setActiveTab(value)
@@ -147,13 +126,80 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
     }
   }
 
+  // Transaction handlers
+  const handleSetReward = async (submissionId: number) => {
+    if (!bounty || !rewardAmount) return
+    try {
+      setLoading(true)
+      setError(null)
+      setTransactionStage("submitted")
+      const tx = await setSubmissionReward(bounty.id, submissionId, rewardAmount)
+      if (tx) {
+        setTransactionHash(tx.hash)
+        setTransactionStage("pending")
+        const receipt = await tx.wait()
+        if (receipt.status === 1) {
+          setTransactionStage("confirmed")
+          await loadBounty()
+          setShowRewardForm(false)
+          setRewardAmount("")
+          setSelectedSubmissionId(null)
+          setTimeout(() => setTransactionStage("idle"), 3000)
+        }
+      }
+    } catch (err: unknown) {
+      console.error("Error setting reward:", err)
+      setError(err instanceof Error ? err.message : "Failed to set reward")
+      setTransactionStage("error")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCompleteBounty = async () => {
+    if (!bounty) return
+    try {
+      setLoading(true)
+      setError(null)
+      setTransactionStage("submitted")
+      const tx = await completeBounty(bounty.id)
+      if (tx) {
+        setTransactionHash(tx.hash)
+        setTransactionStage("pending")
+        const receipt = await tx.wait()
+        if (receipt.status === 1) {
+          setTransactionStage("confirmed")
+          await loadBounty()
+          setTimeout(() => setTransactionStage("idle"), 3000)
+        }
+      }
+    } catch (err: unknown) {
+      console.error("Error completing bounty:", err)
+      setError(err instanceof Error ? err.message : "Failed to complete bounty")
+      setTransactionStage("error")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Derived state
+  const isCreator = bounty && address && bounty.creator.toLowerCase() === address?.toLowerCase()
+  const isActive = bounty?.status === 0
+  const isExpired = bounty?.deadline ? bounty.deadline * 1000 < Date.now() : false
+  const deadline = new Date((bounty?.deadline ?? 0) * 1000)
+  const timeToDeadline = formatDistanceToNow(deadline, { addSuffix: true })
+
+  // Render states
   if (!connected) {
     return (
       <Card className="border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40">
         <CardContent className="pt-6 flex flex-col items-center justify-center p-10 text-center">
           <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
           <h3 className="text-xl font-semibold mb-2 text-amber-700 dark:text-amber-400">Wallet Not Connected</h3>
-          <p className="text-amber-600 dark:text-amber-300">Please connect your wallet to view bounty details</p>
+          <p className="text-amber-600 dark:text-amber-300 break-words max-w-md">Please connect your wallet to view bounty details</p>
+          <Button variant="outline" className="mt-4" onClick={() => router.push("/")}>
+            Back to Bounties
+          </Button>
         </CardContent>
       </Card>
     )
@@ -165,14 +211,17 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
         <CardContent className="pt-6 flex flex-col items-center justify-center p-10 text-center">
           <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
           <h3 className="text-xl font-semibold mb-2 text-amber-700 dark:text-amber-400">Wrong Network</h3>
-          <p className="text-amber-600 dark:text-amber-300 mb-2">Please switch to Conflux Testnet (Chain ID: 71)</p>
-          <p className="text-sm text-amber-500 dark:text-amber-400/70">Current network: {chainId || "Unknown"}</p>
+          <p className="text-amber-600 dark:text-amber-300 mb-2 break-words max-w-md">Please switch to Conflux Testnet (Chain ID: 71)</p>
+          <p className="text-sm text-amber-500 dark:text-amber-400/70 break-words max-w-md">Current network: {chainId || "Unknown"}</p>
+          <Button variant="outline" className="mt-4" onClick={() => router.push("/")}>
+            Back to Bounties
+          </Button>
         </CardContent>
       </Card>
     )
   }
 
-  if (loading && activeTab !== "submit") {
+  if (loading && !bounty) {
     return (
       <Card className="border-muted">
         <CardContent className="flex flex-col items-center justify-center p-12">
@@ -185,11 +234,20 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
 
   if (error) {
     return (
-      <Card className="border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40">
-        <CardContent className="pt-6 flex flex-col items-center justify-center p-10 text-center">
-          <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-          <h3 className="text-xl font-semibold mb-2 text-red-700 dark:text-red-400">Error Loading Bounty</h3>
-          <p className="text-red-600 dark:text-red-300">{error}</p>
+      <Card className="border-destructive">
+        <CardContent className="flex flex-col items-center justify-center p-12">
+          <AlertTriangle className="h-10 w-10 text-destructive mb-4" />
+          <p className="text-destructive text-center break-words max-w-md">{error}</p>
+          <Button
+            variant="outline"
+            className="mt-4"
+            onClick={() => {
+              setError(null)
+              setTransactionStage("idle")
+            }}
+          >
+            Try Again
+          </Button>
         </CardContent>
       </Card>
     )
@@ -201,7 +259,10 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
         <CardContent className="pt-6 flex flex-col items-center justify-center p-10 text-center">
           <FileText className="h-12 w-12 text-amber-500 mb-4" />
           <h3 className="text-xl font-semibold mb-2 text-amber-700 dark:text-amber-400">Bounty Not Found</h3>
-          <p className="text-amber-600 dark:text-amber-300">No bounty found with ID: {id}</p>
+          <p className="text-amber-600 dark:text-amber-300 break-words max-w-md">No bounty found with ID: {id}</p>
+          <Button variant="outline" className="mt-4" onClick={() => router.push("/")}>
+            Back to Bounties
+          </Button>
         </CardContent>
       </Card>
     )
@@ -209,13 +270,35 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {/* Transaction Progress Overlay */}
+      {transactionStage !== "idle" && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50" />
+          <div className="fixed top-4 right-4 z-50">
+            <TransactionProgress 
+              stage={transactionStage}
+              errorMessage={error || undefined}
+              transactionHash={transactionHash}
+              onClose={() => {
+                if (transactionStage === "confirmed" || transactionStage === "error") {
+                  setTransactionStage("idle")
+                  setTransactionHash(null)
+                  setError(null)
+                }
+              }}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Bounty Header Card */}
       <Card className="overflow-hidden border shadow-md hover:shadow-lg transition-shadow duration-300">
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row justify-between items-start gap-4">
             <div className="flex-1">
-              <h1 className="text-2xl font-bold text-foreground mb-3">{bounty?.title}</h1>
+              <h1 className="text-2xl font-bold text-foreground mb-3">{bounty.title}</h1>
               <div className="flex items-center gap-2">
-                {getStatusBadge(bounty?.status ?? 0)}
+                {getStatusBadge(bounty.status)}
                 {isExpired && isActive && (
                   <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
                     Expired
@@ -239,7 +322,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                   <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
                   Description
                 </h3>
-                <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{bounty?.description}</p>
+                <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{bounty.description}</p>
               </div>
 
               <div className="bg-muted/30 p-4 rounded-lg border">
@@ -247,7 +330,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                   <span className="inline-block w-1 h-5 bg-primary mr-2 rounded"></span>
                   Requirements
                 </h3>
-                <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{bounty?.proofRequirements}</p>
+                <p className="text-muted-foreground whitespace-pre-line leading-relaxed">{bounty.proofRequirements}</p>
               </div>
             </div>
 
@@ -260,7 +343,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                     </div>
                     <div className="ml-4">
                       <p className="text-sm text-muted-foreground">Reward</p>
-                      <p className="font-medium text-lg">{bounty?.rewardAmount} ETH</p>
+                      <p className="font-medium text-lg">{bounty.rewardAmount} ETH</p>
                     </div>
                   </div>
 
@@ -272,7 +355,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                     </div>
                     <div className="ml-4">
                       <p className="text-sm text-muted-foreground">Deadline</p>
-                      <p className="font-medium">{formatDate(bounty?.deadline || 0)}</p>
+                      <p className="font-medium">{formatDate(bounty.deadline)}</p>
                       <p className="text-xs text-muted-foreground mt-1">{timeToDeadline}</p>
                     </div>
                   </div>
@@ -286,7 +369,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                     <div className="ml-4">
                       <p className="text-sm text-muted-foreground">Time Remaining</p>
                       <p className="font-medium">
-                        {bounty?.deadline && bounty.deadline * 1000 > Date.now() ? (
+                        {bounty.deadline * 1000 > Date.now() ? (
                           <span>
                             {Math.ceil((bounty.deadline * 1000 - Date.now()) / (1000 * 60 * 60 * 24))} days left
                           </span>
@@ -306,7 +389,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                     <div className="ml-4">
                       <p className="text-sm text-muted-foreground">Created by</p>
                       <p className="font-medium">
-                        {bounty?.creator
+                        {bounty.creator
                           ? `${bounty.creator.substring(0, 6)}...${bounty.creator.substring(bounty.creator.length - 4)}`
                           : "Unknown"}
                       </p>
@@ -315,15 +398,46 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                 </CardContent>
               </Card>
 
-              {isActive && connected && !isCreator && (
+              {isActive && connected && !isCreator && bounty.deadline * 1000 > Date.now() && (
                 <Button
                   className="w-full shadow-sm hover:shadow transition-all"
                   onClick={() => {
                     setIsSubmitProofOpen(true)
                     setActiveTab("submit")
+                    setShowSubmitProof(true)
+                    requestAnimationFrame(() => {
+                      const submitProofSection = document.getElementById('submit-proof-section')
+                      if (submitProofSection) {
+                        submitProofSection.scrollIntoView({ 
+                          behavior: 'smooth',
+                          block: 'start'
+                        })
+                      }
+                    })
                   }}
                 >
                   Submit Proof
+                </Button>
+              )}
+
+              {isCreator && bounty.status === 0 && (
+                <Button
+                  variant="destructive"
+                  className="w-full"
+                  onClick={handleCompleteBounty}
+                  disabled={loading || transactionStage !== "idle"}
+                >
+                  {transactionStage !== "idle" ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {transactionStage === "submitted" && "Submitting..."}
+                      {transactionStage === "pending" && "Processing..."}
+                      {transactionStage === "confirmed" && "Confirmed!"}
+                      {transactionStage === "error" && "Failed"}
+                    </>
+                  ) : (
+                    "Complete Bounty"
+                  )}
                 </Button>
               )}
             </div>
@@ -331,6 +445,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
         </CardContent>
       </Card>
 
+      {/* Bounty Tabs Section */}
       <Card className="overflow-hidden border shadow-md">
         <CardContent className="p-6">
           <Tabs value={activeTab} className="space-y-4" onValueChange={handleTabChange}>
@@ -341,7 +456,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
             </TabsList>
 
             <TabsContent value="details" className="mt-4">
-              {!bounty?.submissions?.length ? (
+              {!bounty.submissions?.length ? (
                 <Card className="border-dashed border-2 bg-muted/10">
                   <CardContent className="p-10 text-center">
                     <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4 opacity-50" />
@@ -390,47 +505,6 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                                 <p className="font-medium">{`${submission.submitter.substring(0, 6)}...${submission.submitter.substring(submission.submitter.length - 4)}`}</p>
                               </div>
                             </div>
-                            <div>
-                              <p className="text-sm font-medium text-muted-foreground mb-1">Proof</p>
-                              {submission.proofCID ? (
-                                <a
-                                  href={`https://gateway.pinata.cloud/ipfs/${submission.proofCID}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center group"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    const pinataUrl = `https://gateway.pinata.cloud/ipfs/${submission.proofCID}`;
-                                    const publicUrl = `https://ipfs.io/ipfs/${submission.proofCID}`;
-                                    
-                                    fetch(pinataUrl)
-                                      .then(response => {
-                                        if (response.ok) {
-                                          window.open(pinataUrl, '_blank');
-                                        } else {
-                                          window.open(publicUrl, '_blank');
-                                        }
-                                      })
-                                      .catch(() => {
-                                        window.open(publicUrl, '_blank');
-                                      });
-                                  }}
-                                >
-                                  <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
-                                  <span className="font-medium">View Proof</span>
-                                </a>
-                              ) : (
-                                <button
-                                  onClick={() => {
-                                    setActiveTab("verification");
-                                  }}
-                                  className="text-primary hover:underline flex items-center group"
-                                >
-                                  <FileText className="h-4 w-4 mr-2 group-hover:text-primary/80 transition-colors" />
-                                  <span className="font-medium">See Proof</span>
-                                </button>
-                              )}
-                            </div>
                           </div>
 
                           {submission.comments && (
@@ -442,10 +516,67 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                             </div>
                           )}
 
+                          {isCreator && submission.approved && !submission.isWinner && (
+                            <div className="space-y-2">
+                              {!showRewardForm || selectedSubmissionId !== submission.id ? (
+                                <Button
+                                  className="w-full"
+                                  onClick={() => {
+                                    setShowRewardForm(true)
+                                    setSelectedSubmissionId(submission.id)
+                                  }}
+                                >
+                                  Set Reward
+                                </Button>
+                              ) : (
+                                <div className="space-y-2">
+                                  <Input
+                                    type="number"
+                                    placeholder="Enter reward amount in ETH"
+                                    value={rewardAmount}
+                                    onChange={(e) => setRewardAmount(e.target.value)}
+                                  />
+                                  <div className="flex gap-2">
+                                    <Button
+                                      className="flex-1"
+                                      onClick={() => handleSetReward(submission.id)}
+                                      disabled={loading}
+                                    >
+                                      {loading ? "Setting Reward..." : "Confirm Reward"}
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      className="flex-1"
+                                      onClick={() => {
+                                        setShowRewardForm(false)
+                                        setRewardAmount("")
+                                        setSelectedSubmissionId(null)
+                                      }}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           <Button
                             variant="outline"
                             size="sm"
                             className="w-full mt-2"
+                            onClick={() => {
+                              setActiveTab("verification")
+                              requestAnimationFrame(() => {
+                                const verificationPanel = document.getElementById('verification-panel')
+                                if (verificationPanel) {
+                                  verificationPanel.scrollIntoView({ 
+                                    behavior: 'smooth',
+                                    block: 'start'
+                                  })
+                                }
+                              })
+                            }}
                           >
                             View Details
                           </Button>
@@ -458,8 +589,8 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
             </TabsContent>
 
             <TabsContent value="submit">
-              {bounty.status === 0 && !isCreator && connected && (
-                <div className="space-y-4">
+              {bounty.status === 0 && !isCreator && connected && showSubmitProof && (
+                <div id="submit-proof-section" className="space-y-4">
                   <CollapsibleSubmitProof
                     bountyId={bounty.id}
                     bountyTitle={bounty.title}
@@ -504,4 +635,3 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
     </div>
   )
 }
-

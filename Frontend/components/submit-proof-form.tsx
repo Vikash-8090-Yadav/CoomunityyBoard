@@ -15,6 +15,9 @@ import { TransactionProgress } from "@/components/ui/transaction-progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { pinataService } from '@/lib/pinata'
+import { useBounty } from "@/context/bounty-context"
+import { useAccount } from "wagmi"
+import { uploadToIPFS } from "@/lib/ipfs"
 
 interface ProofMetadata {
   title: string
@@ -30,14 +33,15 @@ interface ProofMetadata {
 }
 
 interface SubmitProofFormProps {
-  bountyId: number;
-  bountyTitle: string;
-  onSuccess?: () => void;
+  bountyId: string
+  bountyTitle: string
+  onSuccess?: () => void
 }
 
 export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: SubmitProofFormProps) {
   const { connected, provider, address } = useWallet()
-
+  const { submitProof, getBountyDetails } = useBounty()
+  const { isConnected } = useAccount()
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [files, setFiles] = useState<File[]>([])
@@ -47,6 +51,7 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
   const [transactionStage, setTransactionStage] = useState<"submitted" | "pending" | "confirmed" | "error">("submitted")
   const [transactionError, setTransactionError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [proof, setProof] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,23 +82,37 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (!connected) {
-      setTransactionStage("error")
-      setTransactionError("Please connect your wallet first")
-      return
-    }
-
-    if (files.length === 0 && links.length === 0) {
-      setTransactionStage("error")
-      setTransactionError("Please upload at least one file or add a link as proof")
-      return
-    }
+    if (!address || !bountyId) return
 
     try {
       setLoading(true)
-      setTransactionStage("submitted")
       setTransactionError(null)
+
+      // Check if bounty is expired
+      const bounty = await getBountyDetails(Number(bountyId))
+      if (!bounty) {
+        setTransactionError("Bounty not found")
+        return
+      }
+
+      if (bounty.deadline * 1000 < Date.now()) {
+        setTransactionError("Cannot submit proof for an expired bounty")
+        return
+      }
+
+      if (!connected) {
+        setTransactionStage("error")
+        setTransactionError("Please connect your wallet first")
+        return
+      }
+
+      if (files.length === 0 && links.length === 0) {
+        setTransactionStage("error")
+        setTransactionError("Please upload at least one file or add a link as proof")
+        return
+      }
+
+      setTransactionStage("submitted")
 
       // Upload files to Pinata
       const uploadedFiles = await Promise.all(
@@ -111,7 +130,7 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
       const metadata: ProofMetadata = {
         title: title || `Proof for Bounty: ${bountyTitle}`,
         description: description,
-        submitter: address || "",
+        submitter: address,
         timestamp: Date.now(),
         files: uploadedFiles,
         links: links,
@@ -194,16 +213,28 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
   // Show loading state while transaction is pending
   if (loading) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="text-center py-6">
-            <TransactionProgress 
-              stage={transactionStage} 
-              errorMessage={transactionError || undefined}
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <>
+        <div className="fixed inset-0 bg-black/50 z-50" />
+        <div className="fixed top-4 right-4 z-50">
+          <TransactionProgress 
+            stage={transactionStage}
+            errorMessage={transactionError || undefined}
+          />
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center justify-center p-12">
+              <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+              <p className="text-muted-foreground">
+                {transactionStage === "submitted" && "Submitting proof..."}
+                {transactionStage === "pending" && "Processing transaction..."}
+                {transactionStage === "confirmed" && "Transaction confirmed!"}
+                {transactionStage === "error" && "Transaction failed"}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </>
     )
   }
 

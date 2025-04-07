@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { ethers, providers } from 'ethers';
 import abi from "@/abi/CommunityBountyBoard.json";
 import { communityAddress } from '@/config';
@@ -84,9 +84,11 @@ interface BountyContextType {
   getUserBounties: (address: string) => Promise<number[]>;
   getUserSubmissions: (address: string) => Promise<number[]>;
   voteOnSubmission: (bountyId: number, submissionId: number, approve: boolean) => Promise<ethers.ContractTransaction>;
-  completeBounty: (bountyId: number) => Promise<void>;
+  completeBounty: (bountyId: number) => Promise<ethers.ContractTransaction>;
   hasVotedOnSubmission: (bountyId: number, submissionId: number, userAddress: string) => Promise<boolean>;
   getUserReputation: (address: string) => Promise<number>;
+  setReward: (bountyId: number, rewardAmount: string) => Promise<ethers.ContractTransaction>;
+  setSubmissionReward: (bountyId: number, submissionId: number, rewardAmount: string) => Promise<ethers.ContractTransaction>;
 }
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
@@ -373,7 +375,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Get bounty details
-  const getBountyDetails = async (bountyId: number): Promise<Bounty> => {
+  const getBountyDetails = useCallback(async (bountyId: number): Promise<Bounty> => {
     const contract = getReadOnlyContract();
 
     try {
@@ -422,7 +424,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       }
 
       return {
-        id: bountyId,
+        id: details.id,
         creator: details.creator,
         title: details.title,
         description: details.description,
@@ -441,7 +443,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       console.error(`Error fetching bounty ${bountyId}:`, err);
       throw err;
     }
-  };
+  }, [account]);
 
   // Get user's bounties
   const getUserBounties = async (userAddress: string): Promise<number[]> => {
@@ -510,6 +512,30 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const setReward = async (bountyId: number, rewardAmount: string) => {
+    if (!signer) throw new Error("Please connect your wallet");
+    try {
+      const contract = getSignedContract();
+      const tx = await contract.setReward(bountyId, rewardAmount);
+      return tx;
+    } catch (error) {
+      console.error("Error setting reward:", error);
+      throw error;
+    }
+  };
+
+  const setSubmissionReward = async (bountyId: number, submissionId: number, rewardAmount: string) => {
+    if (!signer) throw new Error("Please connect your wallet");
+    try {
+      const contract = getSignedContract();
+      const tx = await contract.setSubmissionReward(bountyId, submissionId, rewardAmount);
+      return tx;
+    } catch (error) {
+      console.error("Error setting submission reward:", error);
+      throw error;
+    }
+  };
+
   return (
     <BountyContext.Provider
       value={{
@@ -529,6 +555,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         completeBounty,
         hasVotedOnSubmission,
         getUserReputation,
+        setReward,
+        setSubmissionReward,
       }}
     >
       {children}

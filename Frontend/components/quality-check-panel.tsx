@@ -2,6 +2,9 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2, Wand2 } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+import { Badge } from "@/components/ui/badge"
+import { Star, RefreshCw } from "lucide-react"
 
 interface Submission {
   id: number;
@@ -12,11 +15,18 @@ interface Submission {
 }
 
 interface QualityCheckPanelProps {
-  submission: Submission;
+  submission: {
+    id: number;
+    bountyId: number;
+    submitter: string;
+    proofCID: string;
+    comments: string;
+  };
   onQualityCheck: (score: number, feedback: string) => void;
   isSubmitter: boolean;
   bountyAmount: string;
   isApproved: boolean;
+  disabled?: boolean;
 }
 
 interface QualityCheckResult {
@@ -34,14 +44,30 @@ export default function QualityCheckPanel({
   onQualityCheck,
   isSubmitter,
   bountyAmount,
-  isApproved
+  isApproved,
+  disabled = false
 }: QualityCheckPanelProps) {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<QualityCheckResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState<{
+    score: number;
+    feedback: string;
+  } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
 
-  const checkQuality = async (e: React.MouseEvent) => {
-    e.preventDefault(); // Prevent default form submission
-    setLoading(true);
+  const handleAnalyze = async () => {
+    if (disabled) {
+      toast({
+        title: "Analysis Disabled",
+        description: "Quality analysis is not available after the deadline.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsAnalyzing(true)
+    setError(null)
+
     try {
       const response = await fetch('/api/analyze-quality', {
         method: 'POST',
@@ -51,25 +77,33 @@ export default function QualityCheckPanel({
         body: JSON.stringify({
           submissionId: submission.id,
           bountyId: submission.bountyId,
-          ipfsHash: submission.proofCID,
+          submitter: submission.submitter,
+          proofCID: submission.proofCID,
           comments: submission.comments,
-          bountyAmount
+          bountyAmount,
+          isApproved,
         }),
-      });
+      })
 
       if (!response.ok) {
-        throw new Error('Failed to check quality');
+        throw new Error('Failed to analyze quality')
       }
 
-      const data = await response.json();
-      setResult(data);
-      onQualityCheck(data.score, data.feedback);
-    } catch (error: unknown) {
-      console.error('Error checking quality:', error);
+      const data = await response.json()
+      setAnalysisResult(data)
+      onQualityCheck(data.score, data.feedback)
+    } catch (err) {
+      console.error('Error analyzing quality:', err)
+      setError(err instanceof Error ? err.message : 'Failed to analyze quality')
+      toast({
+        title: "Analysis Failed",
+        description: "Failed to analyze submission quality. Please try again.",
+        variant: "destructive",
+      })
     } finally {
-      setLoading(false);
+      setIsAnalyzing(false)
     }
-  };
+  }
 
   return (
     <Card>
@@ -80,18 +114,20 @@ export default function QualityCheckPanel({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!result ? (
+        {!analysisResult ? (
           <Button
             type="button"
-            onClick={checkQuality}
-            disabled={loading || isSubmitter || isApproved}
+            onClick={handleAnalyze}
+            disabled={isAnalyzing || disabled}
             className="w-full"
           >
-            {loading ? (
+            {isAnalyzing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Checking Quality...
+                Analyzing...
               </>
+            ) : disabled ? (
+              'Cannot check after the deadline'
             ) : (
               'Run Quality Check'
             )}
@@ -100,30 +136,13 @@ export default function QualityCheckPanel({
           <div className="space-y-4">
             <div>
               <h3 className="font-medium mb-2">Quality Score</h3>
-              <p className="text-sm text-muted-foreground">{result.score}/100</p>
-            </div>
-
-            <div>
-              <h3 className="font-medium mb-2">Reward Suggestion</h3>
-              <p className="text-sm text-muted-foreground">
-                {result.rewardSuggestion.percentage}% of bounty amount
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {result.rewardSuggestion.explanation}
-              </p>
+              <p className="text-sm text-muted-foreground">{analysisResult.score}/100</p>
             </div>
 
             <div>
               <h3 className="font-medium mb-2">Detailed Feedback</h3>
               <p className="text-sm text-muted-foreground whitespace-pre-line">
-                {result.feedback}
-              </p>
-            </div>
-
-            <div>
-              <h3 className="font-medium mb-2">Full Analysis</h3>
-              <p className="text-sm text-muted-foreground whitespace-pre-line">
-                {result.analysis}
+                {analysisResult.feedback}
               </p>
             </div>
           </div>

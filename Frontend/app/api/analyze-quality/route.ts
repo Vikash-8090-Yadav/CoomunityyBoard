@@ -15,17 +15,19 @@ interface QualityCheckRequest {
   ipfsHash: string
   comments?: string
   bountyAmount: string
+  isImage: boolean
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body: QualityCheckRequest = await request.json()
-    const { submissionId, bountyId, ipfsHash, comments, bountyAmount } = body
+    const { submissionId, bountyId, ipfsHash, comments, bountyAmount, isImage } = body
 
     console.log('Analyzing quality for submission:', {
       submissionId,
       bountyId,
-      ipfsHash
+      ipfsHash,
+      isImage
     })
 
     // Create a prompt for quality analysis
@@ -35,13 +37,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       IPFS Link: ${ipfsHash}
       Comments: ${comments || 'No comments provided'}
       Bounty Amount: ${bountyAmount}
+      Content Type: ${isImage ? 'Image' : 'Text/Code'}
       
       Please evaluate based on:
       1. Completeness of the explanation in comments
       2. Clarity of the submission description
       3. Technical accuracy of the described solution
       4. Relevance to bounty requirements
-      5. Code quality description (if applicable)
+      5. ${isImage ? 'Image quality and relevance' : 'Code quality description (if applicable)'}
       6. IPFS Link Analysis:
          - Does the IPFS link follow the correct format?
          - Is the link properly documented in the comments?
