@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useWallet } from "@/context/wallet-context"
 import { useBounty } from "@/context/bounty-context"
-import { formatEther } from "@ethersproject/units"
+import { ethers } from "ethers"
 import { Award, Calendar, User, FileText, Loader2, Trophy, Star } from "lucide-react"
 import Link from "next/link"
 import ReputationBadge from "@/components/reputation-badge"
@@ -109,7 +109,8 @@ export default function UserProfile() {
       .filter((s) => s.approved && s.reward)
       .reduce((sum: number, sub: Submission) => {
         try {
-          return sum + Number.parseFloat(formatEther(sub.reward || '0'))
+          const formattedAmount = ethers.utils.formatEther(sub.reward || '0')
+          return sum + Number.parseFloat(formattedAmount)
         } catch (e) {
           console.error('Error formatting reward:', e)
           return sum
@@ -272,7 +273,7 @@ export default function UserProfile() {
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center">
                         <Award className="mr-2 h-4 w-4" />
-                        <span>{bounty.reward ? formatEther(bounty.reward) : '0'} ETH</span>
+                        <span>{bounty.reward ? ethers.utils.formatEther(bounty.reward) : '0'} ETH</span>
                       </div>
                       <div className="flex items-center">
                         <Calendar className="mr-2 h-4 w-4" />
@@ -281,7 +282,7 @@ export default function UserProfile() {
                     </div>
                   </CardContent>
                   <div className="p-4 pt-0 mt-auto">
-                    <Button variant="outline" className="w-full" asChild>
+                    <Button className="w-full" asChild>
                       <Link href={`/bounty/${bounty.id}`}>View Details</Link>
                     </Button>
                   </div>
@@ -309,7 +310,7 @@ export default function UserProfile() {
                   <CardHeader>
                     <div className="flex justify-between items-center">
                       <CardTitle className="text-base">{submission.bountyTitle}</CardTitle>
-                      <Badge variant={submission.approved ? "default" : "outline"}>
+                      <Badge className={submission.approved ? "bg-green-500" : "bg-amber-500"}>
                         {submission.approved ? "Approved" : "Pending"}
                       </Badge>
                     </div>
@@ -318,13 +319,13 @@ export default function UserProfile() {
                     <div className="space-y-4">
                       <div className="flex items-center">
                         <Award className="mr-2 h-4 w-4" />
-                        <span className="text-sm">{submission.reward ? formatEther(submission.reward) : '0'} ETH</span>
+                        <span className="text-sm">{submission.reward ? ethers.utils.formatEther(submission.reward) : '0'} ETH</span>
                       </div>
                       <div className="flex items-center">
                         <Calendar className="mr-2 h-4 w-4" />
                         <span className="text-sm">Submitted on: {formatDate(submission.timestamp)}</span>
                       </div>
-                      <Button variant="outline" className="w-full" asChild>
+                      <Button className="w-full" asChild>
                         <Link href={`/bounty/${submission.bountyId}`}>View Bounty</Link>
                       </Button>
                     </div>

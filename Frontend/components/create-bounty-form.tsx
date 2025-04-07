@@ -38,7 +38,7 @@ export default function CreateBountyForm() {
   const [description, setDescription] = useState("")
   const [requirements, setRequirements] = useState("")
   const [reward, setReward] = useState("")
-  const [date, setDate] = useState<Date>()
+  const [selectedDate, setSelectedDate] = useState<Date>()
   const [time, setTime] = useState("23:59") // Default to end of day
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>("")
@@ -55,7 +55,7 @@ export default function CreateBountyForm() {
       return
     }
 
-    if (!title || !description || !requirements || !reward || !date) {
+    if (!title || !description || !requirements || !reward || !selectedDate) {
       setTransactionStage("error")
       setTransactionError("Please fill in all required fields")
       return
@@ -78,7 +78,7 @@ export default function CreateBountyForm() {
       
       // Create a new Date object with the selected date and time
       const [hours, minutes] = time.split(':').map(Number)
-      const deadlineDate = new Date(date)
+      const deadlineDate = new Date(selectedDate)
       deadlineDate.setHours(hours, minutes, 0, 0)
       
       // Calculate deadline timestamp in seconds
@@ -147,7 +147,7 @@ export default function CreateBountyForm() {
     setDescription(suggestions.improvedDescription)
     setRequirements(suggestions.improvedRequirements.join('\n'))
     setReward(suggestions.suggestedReward.amount.toString())
-    setDate(new Date(suggestions.suggestedDeadline.date))
+    setSelectedDate(new Date(suggestions.suggestedDeadline.date))
     setShowAISuggestions(false)
   }
 
@@ -225,46 +225,31 @@ export default function CreateBountyForm() {
             <div className="flex gap-4">
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className={cn("w-full justify-start", !date && "text-muted-foreground")}>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !selectedDate && "text-muted-foreground"
+                    )}
+                  >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? format(date, "PPP") : "Select a date"}
+                    {selectedDate ? (
+                      format(selectedDate, "PPP")
+                    ) : (
+                      <span>Pick a deadline</span>
+                    )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="max-h-[300px] overflow-y-auto">
+                <PopoverContent className="w-auto p-0 z-50" align="start">
                   <Calendar
                     mode="single"
-                    selected={date}
-                    onSelect={setDate}
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
                     initialFocus
-                    className="p-0"
-                    classNames={{
-                      months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-                      month: "space-y-4",
-                      caption: "flex justify-center pt-1 relative items-center",
-                      caption_label: "text-sm font-medium",
-                      nav: "space-x-1 flex items-center",
-                      nav_button: "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100",
-                      nav_button_previous: "absolute left-1",
-                      nav_button_next: "absolute right-1",
-                      table: "w-full border-collapse space-y-1",
-                      head_row: "flex",
-                      head_cell: "text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]",
-                      row: "flex w-full mt-2",
-                      cell: "text-center text-sm p-0 relative [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
-                      day: "h-9 w-9 p-0 font-normal aria-selected:opacity-100",
-                      day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-                      day_today: "bg-accent text-accent-foreground",
-                      day_outside: "text-muted-foreground opacity-50",
-                      day_disabled: "text-muted-foreground opacity-50",
-                      day_range_middle: "aria-selected:bg-accent aria-selected:text-accent-foreground",
-                      day_hidden: "invisible",
-                    }}
-                    disabled={(date: Date) => {
-                      const today = new Date()
-                      today.setHours(0, 0, 0, 0)
-                      const compareDate = new Date(date)
-                      compareDate.setHours(0, 0, 0, 0)
-                      return compareDate < today
+                    disabled={(date) => {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      return date < today;
                     }}
                   />
                 </PopoverContent>
@@ -280,7 +265,7 @@ export default function CreateBountyForm() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Selected deadline: {date && time ? format(new Date(date.getTime() + new Date(`1970-01-01T${time}`).getTime()), "dd/MM/yyyy HH:mm") : "Not set"}
+              Selected deadline: {selectedDate && time ? format(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), parseInt(time.split(':')[0]), parseInt(time.split(':')[1])), "PPPp") : "Not set"}
             </p>
           </div>
 
@@ -300,7 +285,7 @@ export default function CreateBountyForm() {
               description={description}
               requirements={requirements}
               rewardAmount={reward}
-              deadline={date ? date.toISOString().split('T')[0] : ''}
+              deadline={selectedDate ? selectedDate.toISOString().split('T')[0] : ''}
               onAccept={handleAcceptAISuggestions}
             />
           )}

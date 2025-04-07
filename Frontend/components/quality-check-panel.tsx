@@ -19,6 +19,16 @@ interface QualityCheckPanelProps {
   isApproved: boolean;
 }
 
+interface QualityCheckResult {
+  score: number;
+  feedback: string;
+  analysis: string;
+  rewardSuggestion: {
+    percentage: number;
+    explanation: string;
+  };
+}
+
 export default function QualityCheckPanel({
   submission,
   onQualityCheck,
@@ -27,10 +37,10 @@ export default function QualityCheckPanel({
   isApproved
 }: QualityCheckPanelProps) {
   const [loading, setLoading] = useState(false);
-  const [score, setScore] = useState<number | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [result, setResult] = useState<QualityCheckResult | null>(null);
 
-  const checkQuality = async () => {
+  const checkQuality = async (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent default form submission
     setLoading(true);
     try {
       const response = await fetch('/api/analyze-quality', {
@@ -41,7 +51,7 @@ export default function QualityCheckPanel({
         body: JSON.stringify({
           submissionId: submission.id,
           bountyId: submission.bountyId,
-          proofCID: submission.proofCID,
+          ipfsHash: submission.proofCID,
           comments: submission.comments,
           bountyAmount
         }),
@@ -52,8 +62,7 @@ export default function QualityCheckPanel({
       }
 
       const data = await response.json();
-      setScore(data.score);
-      setFeedback(data.feedback);
+      setResult(data);
       onQualityCheck(data.score, data.feedback);
     } catch (error: unknown) {
       console.error('Error checking quality:', error);
@@ -71,8 +80,9 @@ export default function QualityCheckPanel({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!score ? (
+        {!result ? (
           <Button
+            type="button"
             onClick={checkQuality}
             disabled={loading || isSubmitter || isApproved}
             className="w-full"
@@ -90,11 +100,31 @@ export default function QualityCheckPanel({
           <div className="space-y-4">
             <div>
               <h3 className="font-medium mb-2">Quality Score</h3>
-              <p className="text-sm text-muted-foreground">{score}/100</p>
+              <p className="text-sm text-muted-foreground">{result.score}/100</p>
             </div>
+
             <div>
-              <h3 className="font-medium mb-2">Feedback</h3>
-              <p className="text-sm text-muted-foreground">{feedback}</p>
+              <h3 className="font-medium mb-2">Reward Suggestion</h3>
+              <p className="text-sm text-muted-foreground">
+                {result.rewardSuggestion.percentage}% of bounty amount
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {result.rewardSuggestion.explanation}
+              </p>
+            </div>
+
+            <div>
+              <h3 className="font-medium mb-2">Detailed Feedback</h3>
+              <p className="text-sm text-muted-foreground whitespace-pre-line">
+                {result.feedback}
+              </p>
+            </div>
+
+            <div>
+              <h3 className="font-medium mb-2">Full Analysis</h3>
+              <p className="text-sm text-muted-foreground whitespace-pre-line">
+                {result.analysis}
+              </p>
             </div>
           </div>
         )}

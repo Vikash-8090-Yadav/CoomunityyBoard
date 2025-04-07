@@ -11,7 +11,7 @@ import { useWallet } from "@/context/wallet-context"
 import { useBounty, type Submission as ContractSubmission } from "@/context/bounty-context"
 import { formatEther } from "ethers/lib/utils"
 import { Calendar, Clock, Award, User, FileText, Loader2, AlertTriangle, Trophy } from "lucide-react"
-import { VerificationPanel } from "@/components/verification-panel"
+import VerificationPanel from "@/components/verification-panel"
 import { formatDistanceToNow } from "date-fns"
 import type { Bounty as BountyType, Submission as SubmissionType } from "@/types/bounty"
 import CollapsibleSubmitProof from "./collapsible-submit-proof"
@@ -461,7 +461,7 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
               {bounty.status === 0 && !isCreator && connected && (
                 <div className="space-y-4">
                   <CollapsibleSubmitProof
-                    bountyId={bounty.id.toString()}
+                    bountyId={bounty.id}
                     bountyTitle={bounty.title}
                     isOpen={isSubmitProofOpen}
                     setIsOpen={setIsSubmitProofOpen}
@@ -474,8 +474,11 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
               {bounty && (
                 <div className="space-y-6">
                   <VerificationPanel 
-                    bountyId={bounty.id.toString()} 
+                    bountyId={bounty.id} 
                     bountyCreator={bounty.creator} 
+                    deadline={bounty.deadline}
+                    rewardAmount={typeof bounty.rewardAmount === 'bigint' ? bounty.rewardAmount.toString() : bounty.rewardAmount}
+                    proofRequirements={bounty.proofRequirements}
                   />
                 </div>
               )}
