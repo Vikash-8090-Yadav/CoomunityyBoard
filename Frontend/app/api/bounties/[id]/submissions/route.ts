@@ -13,7 +13,7 @@ export const revalidate = 0
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
-) {
+): Promise<NextResponse> {
   try {
     const bountyId = params.id
     console.log('Fetching submissions for bounty:', bountyId)
