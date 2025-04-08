@@ -126,7 +126,7 @@ CommunityBoard/
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/CommunityBoard.git
+git clone https://github.com/Vikash-8090-Yadav/CommunityBoard.git
 cd CommunityBoard
 ```
 
