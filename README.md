@@ -37,6 +37,14 @@ graph TD
     D -->|Returns Remaining| F[Bounty Creator]
 ```
 
+#Smart Contract: 
+
+https://edu-chain-testnet.blockscout.com/address/0x2C8e10de89319BEdD4535fe668B659e6e1dF5593
+
+
+<img width="927" alt="image" src="https://github.com/user-attachments/assets/33749aeb-c8ba-49c4-be7d-0dd91b794f40" />
+
+
 ### Screenshots
 
 #### Bounty Creation
