@@ -40,19 +40,25 @@ graph TD
 ### Screenshots
 
 #### Bounty Creation
-![Bounty Creation](https://via.placeholder.com/800x400?text=Bounty+Creation+Form)
+<img width="1097" alt="Screenshot 2025-04-08 181452" src="https://github.com/user-attachments/assets/0c76daf5-a062-4b49-b820-b2647b8ca1e7" />
+
 *Create new bounties with AI-powered suggestions*
 
 #### Submission Verification
-![Verification Panel](https://via.placeholder.com/800x400?text=Verification+Panel)
+
+<img width="1077" alt="Screenshot 2025-04-08 181545" src="https://github.com/user-attachments/assets/d2096bb0-ca36-403f-bdc3-c7e4010040fc" />
+
+
 *Community-driven verification with quality checks*
 
 #### Reward Distribution
-![Reward Distribution](https://via.placeholder.com/800x400?text=Reward+Distribution)
+
+
 *Smart reward distribution with AI analysis*
 
 #### Quality Check
-![Quality Check](https://via.placeholder.com/800x400?text=Quality+Check)
+
+
 *AI-powered quality assessment for submissions*
 
 ## 🌟 Features
@@ -120,7 +126,7 @@ CommunityBoard/
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/CommunityBoard.git
+git clone https://github.com/Vikash-8090-Yadav/CommunityBoard.git
 cd CommunityBoard
 ```
 
@@ -176,7 +182,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👥 Authors
 
-- Your Name - Initial work
+- @Vikash-8090-Yadav
 
 ## 🙏 Acknowledgments
 
