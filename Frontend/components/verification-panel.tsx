@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Loader2, Check, X, FileText, ThumbsUp, ThumbsDown, ImageIcon, ExternalLink, Info, User, Trophy, LinkIcon, Calendar } from "lucide-react"
+import { Loader2, Check, FileText, ThumbsUp, ThumbsDown, ImageIcon, ExternalLink, Info, User, Trophy, LinkIcon, Calendar } from "lucide-react"
 import { useWallet } from "@/context/wallet-context"
 import { ethers } from "ethers"
 import { communityAddress } from "@/config"
@@ -580,11 +580,7 @@ export default function VerificationPanel({
                       <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
                       Submission #{index + 1}
                     </CardTitle>
-                    {submission.isWinner ? (
-                      <Badge className="bg-yellow-500/15 text-yellow-600 hover:bg-yellow-500/20 border-yellow-500/20">
-                        Winner
-                      </Badge>
-                    ) : submission.status === "approved" ? (
+                    {submission.status === "approved" ? (
                       <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/20">
                         Approved
                       </Badge>
@@ -671,7 +667,6 @@ export default function VerificationPanel({
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex-1 h-8"
                           onClick={() => handleVote(index, true)}
                           disabled={
                             !connected ||
@@ -680,14 +675,23 @@ export default function VerificationPanel({
                             submission.submitter.toLowerCase() === address?.toLowerCase() ||
                             submission.status !== "pending"
                           }
+                          className={hasVoted(index) ? "opacity-50 cursor-not-allowed" : ""}
                         >
-                          <Check className="h-3.5 w-3.5 mr-1.5 text-green-500" />
-                          {hasVoted(index) ? "Voted" : "Approve"}
+                          {hasVoted(index) ? (
+                            <>
+                              <Check className="mr-2 h-4 w-4" />
+                              Voted
+                            </>
+                          ) : (
+                            <>
+                              <ThumbsUp className="mr-2 h-4 w-4" />
+                              Approve
+                            </>
+                          )}
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex-1 h-8"
                           onClick={() => handleVote(index, false)}
                           disabled={
                             !connected ||
@@ -696,9 +700,19 @@ export default function VerificationPanel({
                             submission.submitter.toLowerCase() === address?.toLowerCase() ||
                             submission.status !== "pending"
                           }
+                          className={hasVoted(index) ? "opacity-50 cursor-not-allowed" : ""}
                         >
-                          <X className="h-3.5 w-3.5 mr-1.5 text-red-500" />
-                          {hasVoted(index) ? "Voted" : "Reject"}
+                          {hasVoted(index) ? (
+                            <>
+                              <Check className="mr-2 h-4 w-4" />
+                              Voted
+                            </>
+                          ) : (
+                            <>
+                              <ThumbsDown className="mr-2 h-4 w-4" />
+                              Reject
+                            </>
+                          )}
                         </Button>
                       </div>
                     )}
