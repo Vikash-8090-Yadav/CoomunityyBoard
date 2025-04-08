@@ -2,6 +2,7 @@
 
 import { useWallet } from "../context/wallet-context";
 import { useState, useEffect } from "react";
+import { ethers } from "ethers";
 
 interface NetworkConfig {
   chainId: string;
@@ -42,7 +43,11 @@ export default function NetworkSwitchButton() {
     const checkNetwork = async () => {
       if (typeof window !== "undefined" && window.ethereum) {
         try {
-          const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+          // Use provider to get chain ID instead of direct request
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const network = await provider.getNetwork();
+          const currentChainId = `0x${network.chainId.toString(16)}`;
+          
           console.log("Current chain ID:", currentChainId);
           console.log("Target chain ID:", networks.edutestnet.chainId);
           
@@ -57,19 +62,26 @@ export default function NetworkSwitchButton() {
           }
         } catch (error) {
           console.error("Error checking network:", error);
+          setIsCorrectNetwork(false);
+          setShowButton(true);
         }
       }
     };
 
     checkNetwork();
 
-    // Listen for network changes
-    if (window.ethereum) {
-      window.ethereum.on('chainChanged', checkNetwork);
-      return () => {
-        window.ethereum.removeListener('chainChanged', checkNetwork);
-      };
+    // Add event listener for network changes
+    if (typeof window !== "undefined" && window.ethereum) {
+      window.ethereum.on('chainChanged', () => {
+        checkNetwork();
+      });
     }
+
+    return () => {
+      if (typeof window !== "undefined" && window.ethereum) {
+        window.ethereum.removeListener('chainChanged', checkNetwork);
+      }
+    };
   }, [setIsCorrectNetwork]);
 
   const handleSwitchNetwork = async () => {
