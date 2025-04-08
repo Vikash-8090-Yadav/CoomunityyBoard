@@ -673,7 +673,13 @@ export default function VerificationPanel({
                           size="sm"
                           className="flex-1 h-8"
                           onClick={() => handleVote(index, true)}
-                          disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index) || !isActive}
+                          disabled={
+                            !connected ||
+                            !isActive ||
+                            hasVoted(index) ||
+                            submission.submitter.toLowerCase() === address?.toLowerCase() ||
+                            submission.status !== "pending"
+                          }
                         >
                           <Check className="h-3.5 w-3.5 mr-1.5 text-green-500" />
                           {hasVoted(index) ? "Voted" : "Approve"}
@@ -683,7 +689,13 @@ export default function VerificationPanel({
                           size="sm"
                           className="flex-1 h-8"
                           onClick={() => handleVote(index, false)}
-                          disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index) || !isActive}
+                          disabled={
+                            !connected ||
+                            !isActive ||
+                            hasVoted(index) ||
+                            submission.submitter.toLowerCase() === address?.toLowerCase() ||
+                            submission.status !== "pending"
+                          }
                         >
                           <X className="h-3.5 w-3.5 mr-1.5 text-red-500" />
                           {hasVoted(index) ? "Voted" : "Reject"}
