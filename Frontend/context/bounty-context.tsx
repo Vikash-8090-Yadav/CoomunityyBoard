@@ -485,6 +485,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const tx = await contract.completeBounty(bountyId);
       await tx.wait();
       await fetchAllBounties();
+      return tx;
     } catch (err: any) {
       console.error("Error completing bounty:", err);
       setError(err.message);

@@ -6,18 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Loader2, Upload, LinkIcon, ImageIcon, FileText, X } from "lucide-react"
+import { Loader2, Upload, ImageIcon, FileText, X } from "lucide-react"
 import { useWallet } from "@/context/wallet-context"
 import { ethers } from "ethers"
 import { communityAddress } from "@/config"
 import abi from "@/abi/CommunityBountyBoard.json"
 import { TransactionProgress } from "@/components/ui/transaction-progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { pinataService } from '@/lib/pinata'
 import { useBounty } from "@/context/bounty-context"
 import { useAccount } from "wagmi"
-import { uploadToIPFS } from "@/lib/ipfs"
+import { uploadJSONToIPFS, getIPFSGatewayURL } from "@/lib/ipfs"
+import { toast } from "@/components/ui/use-toast"
 
 interface ProofMetadata {
   title: string
@@ -30,6 +29,7 @@ interface ProofMetadata {
     url: string
   }>
   links: string[]
+  [key: string]: unknown
 }
 
 interface SubmitProofFormProps {
@@ -39,7 +39,7 @@ interface SubmitProofFormProps {
 }
 
 export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: SubmitProofFormProps) {
-  const { connected, provider, address } = useWallet()
+  const { provider, address } = useWallet()
   const { submitProof, getBountyDetails } = useBounty()
   const { isConnected } = useAccount()
   const [title, setTitle] = useState("")
@@ -80,15 +80,58 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
     setLinks((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handlePreview = async () => {
     if (!address || !bountyId) return
 
     try {
       setLoading(true)
       setTransactionError(null)
 
-      // Check if bounty is expired
+      const metadata: ProofMetadata = {
+        title: title || `Proof for Bounty: ${bountyTitle}`,
+        description: description,
+        submitter: address,
+        timestamp: Date.now(),
+        files: [],
+        links: links,
+      }
+
+      const previewCid = await uploadJSONToIPFS(metadata)
+      const previewUrl = getIPFSGatewayURL(previewCid)
+      setProof(previewUrl)
+      
+      toast({
+        title: "Preview Generated",
+        description: "Your proof preview has been generated successfully.",
+        variant: "default"
+      })
+    } catch (err) {
+      console.error("Error generating preview:", err)
+      setTransactionError("Failed to generate preview. Please try again.")
+      toast({
+        title: "Preview Generation Failed",
+        description: "Failed to generate preview. Please try again.",
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!address || !bountyId) return
+
+    if (!isConnected) {
+      setTransactionStage("error")
+      setTransactionError("Please connect your wallet first")
+      return
+    }
+
+    try {
+      setLoading(true)
+      setTransactionError(null)
+
       const bounty = await getBountyDetails(Number(bountyId))
       if (!bounty) {
         setTransactionError("Bounty not found")
@@ -100,12 +143,6 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
         return
       }
 
-      if (!connected) {
-        setTransactionStage("error")
-        setTransactionError("Please connect your wallet first")
-        return
-      }
-
       if (files.length === 0 && links.length === 0) {
         setTransactionStage("error")
         setTransactionError("Please upload at least one file or add a link as proof")
@@ -114,7 +151,6 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
 
       setTransactionStage("submitted")
 
-      // Upload files to Pinata
       const uploadedFiles = await Promise.all(
         files.map(async (file) => {
           const result = await pinataService.uploadFile(file)
@@ -126,7 +162,6 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
         })
       )
 
-      // Create metadata
       const metadata: ProofMetadata = {
         title: title || `Proof for Bounty: ${bountyTitle}`,
         description: description,
@@ -136,7 +171,6 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
         links: links,
       }
 
-      // Upload metadata to Pinata
       const metadataCid = await pinataService.uploadJSON(metadata)
       const cleanCid = metadataCid.replace('ipfs://', '')
 
@@ -145,18 +179,14 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
       }
 
       const signer = provider.getSigner()
-
-      // Get current nonce
       const nonce = await provider.getTransactionCount(await signer.getAddress())
 
-      // Create the transaction data
       const iface = new ethers.utils.Interface(abi.abi)
       const encodedData = iface.encodeFunctionData("submitProof", [
         bountyId.toString(),
         cleanCid
       ])
 
-      // Create transaction object
       const tx = {
         from: await signer.getAddress(),
         to: communityAddress,
@@ -164,33 +194,30 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
         nonce: nonce
       }
 
-      // Send transaction
       const txResponse = await signer.sendTransaction(tx)
 
       setTransactionStage("pending")
 
-      // Wait for transaction to be mined
       const receipt = await txResponse.wait()
       console.log("Transaction confirmed:", receipt)
       setTransactionStage("confirmed")
 
-      // Wait for a moment to show the completed state
       await new Promise(resolve => setTimeout(resolve, 1500))
 
-      // Call onSuccess callback if provided
       if (onSuccess) {
         onSuccess()
       }
 
       setSuccess(true)
 
-      // Automatically navigate to details tab after showing success message
       setTimeout(() => {
-        // Set the tab preference to details
         localStorage.setItem('bounty-active-tab', 'details');
-        // Refresh the page to show updated data
         window.location.reload();
       }, 2000);
+
+      if (submitProof) {
+        await submitProof(Number(bountyId), cleanCid)
+      }
 
     } catch (err: unknown) {
       console.error("Error submitting proof:", err)
@@ -210,7 +237,6 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
     }
   }
 
-  // Show loading state while transaction is pending
   if (loading) {
     return (
       <>
@@ -262,169 +288,130 @@ export default function SubmitProofForm({ bountyId, bountyTitle, onSuccess }: Su
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">Submit Proof of Completion</CardTitle>
+        <CardTitle>Submit Proof</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="title">Proof Title</Label>
+            <Label htmlFor="title">Title (optional)</Label>
             <Input
               id="title"
-              placeholder="Enter a clear title for your proof"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              required
+              placeholder="Enter a title for your proof"
             />
           </div>
-
-          <Tabs defaultValue="files" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="files">Upload Files</TabsTrigger>
-              <TabsTrigger value="links">Add Links</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="files" className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <div
-                  className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:bg-accent/50 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                  <p className="text-sm font-medium mb-1">Drag and drop files or click to upload</p>
-                  <p className="text-xs text-muted-foreground">
-                    Upload screenshots, documents, or any files as proof of completion
-                  </p>
-                  <Input
-                    ref={fileInputRef}
-                    id="proof-files"
-                    type="file"
-                    multiple
-                    onChange={handleFileChange}
-                    className="hidden"
-                    disabled={loading}
-                  />
-                </div>
-
-                {files.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium mb-2">Uploaded Files</h4>
-                    <div className="space-y-2">
-                      {files.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-accent/50 rounded-md">
-                          <div className="flex items-center">
-                            {file.type.startsWith("image/") ? (
-                              <ImageIcon className="h-4 w-4 mr-2 text-blue-500" />
-                            ) : (
-                              <FileText className="h-4 w-4 mr-2 text-blue-500" />
-                            )}
-                            <span className="text-sm truncate max-w-[200px]">{file.name}</span>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={() => removeFile(index)} className="h-6 w-6">
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="links" className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <Label htmlFor="link">Add Link</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="link"
-                    placeholder="https://example.com/my-work"
-                    value={newLink}
-                    onChange={(e) => setNewLink(e.target.value)}
-                    disabled={loading}
-                  />
-                  <Button type="button" onClick={addLink} disabled={loading || !newLink.trim()}>
-                    Add
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Add links to GitHub repositories, deployed websites, or other online resources
-                </p>
-
-                {links.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium mb-2">Added Links</h4>
-                    <div className="space-y-2">
-                      {links.map((link, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-accent/50 rounded-md">
-                          <div className="flex items-center">
-                            <LinkIcon className="h-4 w-4 mr-2 text-blue-500" />
-                            <a
-                              href={link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm text-blue-500 hover:underline truncate max-w-[200px]"
-                            >
-                              {link}
-                            </a>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={() => removeLink(index)} className="h-6 w-6">
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Description of Work</Label>
+            <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
-              placeholder="Describe how you completed the bounty requirements..."
-              rows={4}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe your proof in detail"
               required
             />
           </div>
 
-          {transactionError && (
-            <Alert variant="destructive">
-              <AlertDescription>{transactionError}</AlertDescription>
-            </Alert>
+          <div className="space-y-2">
+            <Label>Files</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="file"
+                multiple
+                onChange={handleFileChange}
+                ref={fileInputRef}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Files
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePreview}
+                disabled={loading}
+              >
+                <ImageIcon className="mr-2 h-4 w-4" />
+                Generate Preview
+              </Button>
+            </div>
+            {files.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {files.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                    <span className="text-sm">{file.name}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeFile(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Links</Label>
+            <div className="flex gap-2">
+              <Input
+                value={newLink}
+                onChange={(e) => setNewLink(e.target.value)}
+                placeholder="Enter a URL"
+              />
+              <Button type="button" onClick={addLink}>
+                Add Link
+              </Button>
+            </div>
+            {links.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {links.map((link, index) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                    <span className="text-sm">{link}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeLink(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {proof && (
+            <div className="space-y-2">
+              <Label>Preview</Label>
+              <div className="p-4 bg-muted rounded-md">
+                <p className="text-sm break-all">{proof}</p>
+              </div>
+            </div>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={!connected || (files.length === 0 && links.length === 0) || loading}
-          >
+          <Button type="submit" className="w-full" disabled={loading}>
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Submitting Proof...
+                Submitting...
               </>
             ) : (
-              <>
-                <Upload className="mr-2 h-4 w-4" />
-                Submit Proof
-              </>
+              'Submit Proof'
             )}
           </Button>
-
-          <div className="text-xs text-muted-foreground">
-            <p>By submitting, you confirm that:</p>
-            <ul className="list-disc pl-5 space-y-1 mt-1">
-              <li>Your work meets all the requirements specified in the bounty</li>
-              <li>The proof you&apos;re submitting is your original work</li>
-              <li>You understand that community members will verify your submission</li>
-            </ul>
-          </div>
         </form>
       </CardContent>
     </Card>
   )
 }
-

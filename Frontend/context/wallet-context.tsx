@@ -11,6 +11,9 @@ interface WalletContextType {
   chainId: number | null;
   connect: () => Promise<void>;
   disconnect: () => void;
+  isCorrectNetwork: boolean;
+  setIsCorrectNetwork: (value: boolean) => void;
+  loading: boolean;
 }
 
 const WalletContext = createContext<WalletContextType>({
@@ -21,7 +24,24 @@ const WalletContext = createContext<WalletContextType>({
   chainId: null,
   connect: async () => {},
   disconnect: () => {},
+  isCorrectNetwork: false,
+  setIsCorrectNetwork: () => {},
+  loading: false,
 });
+
+const networks = {
+  edutestnet: {
+    chainId: `0x${Number(656476).toString(16)}`,
+    chainName: "edutestnet",
+    nativeCurrency: {
+      name: "ETH",
+      symbol: "ETH",
+      decimals: 18,
+    },
+    rpcUrls: ["https://rpc.open-campus-codex.gelato.digital"],
+    blockExplorerUrls: ['https://opencampus-codex.blockscout.com'],
+  },
+};
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null);
@@ -29,14 +49,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState("");
   const [connected, setConnected] = useState(false);
   const [chainId, setChainId] = useState<number | null>(null);
+  const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && (window as any).ethereum) {
-      const ethersProvider = new ethers.providers.Web3Provider((window as any).ethereum, {
-        name: 'CFXTestnet',
-        chainId: 71,
-        ensAddress: undefined
-      });
+      const ethersProvider = new ethers.providers.Web3Provider((window as any).ethereum);
       setProvider(ethersProvider);
 
       const checkConnection = async () => {
@@ -64,19 +81,37 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       checkConnection();
 
-      (window as any).ethereum.on("chainChanged", (chainId: string) => {
+      // Listen for network changes
+      (window as any).ethereum.on("chainChanged", async (chainId: string) => {
         console.log("Network changed to chainId:", chainId);
-        if (chainId !== "0x47") {
-          console.log("Warning: Not connected to Conflux Testnet");
+        const newChainId = parseInt(chainId, 16);
+        setChainId(newChainId);
+        
+        // Update provider and signer
+        const newProvider = new ethers.providers.Web3Provider((window as any).ethereum);
+        setProvider(newProvider);
+        setSigner(newProvider.getSigner());
+        
+        // Check if we still have accounts connected
+        const accounts = await newProvider.listAccounts();
+        if (accounts.length > 0) {
+          setAddress(accounts[0]);
+          setConnected(true);
+        } else {
+          setAddress("");
+          setConnected(false);
         }
-        window.location.reload();
       });
 
+      // Listen for account changes
       (window as any).ethereum.on("accountsChanged", (accounts: string[]) => {
         if (accounts.length === 0) {
           disconnect();
         } else {
-          connect();
+          setAddress(accounts[0]);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem("walletAddress", accounts[0]);
+          }
         }
       });
 
@@ -89,82 +124,30 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const connect = async () => {
     try {
-      // Check if MetaMask is installed
-      if (typeof window.ethereum === "undefined") {
-        throw new Error("Please install MetaMask to connect your wallet");
-      }
+      if (typeof window !== "undefined" && (window as any).ethereum) {
+        const ethersProvider = new ethers.providers.Web3Provider((window as any).ethereum);
+        const accounts = await ethersProvider.send("eth_requestAccounts", []);
+        
+        if (accounts.length > 0) {
+          const ethSigner = ethersProvider.getSigner();
+          const userAddress = await ethSigner.getAddress();
+          const network = await ethersProvider.getNetwork();
 
-      // Initialize provider if not already done
-      if (!provider) {
-        const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
-        setProvider(web3Provider);
-      }
+          setProvider(ethersProvider);
+          setSigner(ethSigner);
+          setAddress(userAddress);
+          setConnected(true);
+          setChainId(network.chainId);
+          setIsCorrectNetwork(network.chainId === 656476);
 
-      // Request account access
-      await window.ethereum.request({ method: "eth_requestAccounts" });
-
-      const currentProvider = provider || new ethers.providers.Web3Provider(window.ethereum);
-      const network = await currentProvider.getNetwork();
-
-      // Check and switch to Conflux Testnet if needed
-      if (network.chainId !== 71) {
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x47' }],
-          });
-        } catch (switchError: any) {
-          // If the chain hasn't been added to MetaMask
-          if (switchError.code === 4902) {
-            try {
-              await window.ethereum.request({
-                method: 'wallet_addEthereumChain',
-                params: [{
-                  chainId: '0x47',
-                  chainName: 'CFXTestnet',
-                  nativeCurrency: {
-                    name: 'CFXTestnet',
-                    symbol: 'CFX',
-                    decimals: 18
-                  },
-                  rpcUrls: ['https://evmtestnet.confluxrpc.com'],
-                  blockExplorerUrls: ['https://www.confluxscan.io/']
-                }],
-              });
-            } catch (addError) {
-              throw new Error('Failed to add Conflux Testnet to your wallet. Please try adding it manually.');
-            }
+          if (typeof window !== 'undefined') {
+            localStorage.setItem("walletAddress", userAddress);
           }
-          throw new Error('Failed to switch to Conflux Testnet. Please switch networks manually.');
         }
       }
-
-      // Get signer and address
-      const ethSigner = currentProvider.getSigner();
-      const userAddress = await ethSigner.getAddress();
-      const updatedNetwork = await currentProvider.getNetwork();
-
-      // Update state
-      setSigner(ethSigner);
-      setAddress(userAddress);
-      setConnected(true);
-      setChainId(updatedNetwork.chainId);
-
-      console.log("Successfully connected to wallet on network:", {
-        chainId: updatedNetwork.chainId,
-        name: updatedNetwork.name
-      });
-
     } catch (error: any) {
       console.error("Wallet connection error:", error);
-      // Reset state on error
-      setSigner(null);
-      setAddress("");
-      setConnected(false);
-      setChainId(null);
-      
-      // Throw a user-friendly error message
-      throw new Error(error.message || "Failed to connect wallet. Please try again.");
+      throw new Error(error.message || "Failed to connect wallet");
     }
   };
 
@@ -173,6 +156,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress("");
     setConnected(false);
     setChainId(null);
+    setIsCorrectNetwork(false);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem("walletAddress");
+    }
   };
 
   return (
@@ -185,6 +172,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         chainId,
         connect,
         disconnect,
+        isCorrectNetwork,
+        setIsCorrectNetwork,
+        loading: false,
       }}
     >
       {children}

@@ -1,1 +1,1 @@
-export const communityAddress = "0x7518d86Ca42D53487FE581fC8E1f4bFE919cb046"
+export const communityAddress = "0x2C8e10de89319BEdD4535fe668B659e6e1dF5593"

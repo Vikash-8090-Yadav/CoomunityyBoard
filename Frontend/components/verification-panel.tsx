@@ -14,7 +14,6 @@ import { TransactionProgress } from "@/components/ui/transaction-progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import Image from "next/image"
 import QualityCheckPanel from './quality-check-panel'
-import { useToast } from "@/components/ui/use-toast"
 
 type SubmissionData = {
   id: string
@@ -32,34 +31,15 @@ type SubmissionData = {
   qualityScore?: number
 }
 
-type SubmissionMetadata = {
-  title: string
-  description: string
-  submitter: string
-  timestamp: number
-  files: Array<{
-    name: string
-    cid: string
-    url: string
-  }>
-  links: string[]
-}
-
 interface VerificationPanelProps {
   bountyId: number
   bountyCreator: string
   deadline: number
   rewardAmount: string
-  proofRequirements: string
 }
 
 // Add IPFS gateway configuration
 const IPFS_GATEWAY = "https://ipfs.io/ipfs/"
-
-interface TransactionProgressProps {
-  stage: "pending" | "submitted" | "confirmed" | "error";
-  transactionHash?: string | null;
-}
 
 interface IPFSMetadata {
   name: string;
@@ -76,24 +56,11 @@ interface IPFSMetadata {
   timestamp?: number;
 }
 
-// Add metadata fetching function
-const fetchMetadata = async (ipfsHash: string): Promise<IPFSMetadata | null> => {
-  try {
-    const response = await fetch(`${IPFS_GATEWAY}${ipfsHash}`);
-    if (!response.ok) throw new Error('Failed to fetch metadata');
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching metadata:', error);
-    return null;
-  }
-};
-
 export default function VerificationPanel({ 
   bountyId, 
   bountyCreator, 
   deadline,
-  rewardAmount,
-  proofRequirements
+  rewardAmount
 }: VerificationPanelProps) {
   const { connected, provider, address } = useWallet()
   const [submissions, setSubmissions] = useState<SubmissionData[]>([])
@@ -111,7 +78,6 @@ export default function VerificationPanel({
     const deadlineTime = new Date(deadline * 1000).getTime()
     return currentTime < deadlineTime
   })
-  const [detailsSection, setDetailsSection] = useState<number | null>(null)
 
   // Add deadline check effect
   useEffect(() => {
@@ -133,15 +99,12 @@ export default function VerificationPanel({
   const fetchSubmissions = useCallback(async () => {
     try {
       setLoading(true)
-      const provider = new ethers.providers.JsonRpcProvider('https://evmtestnet.confluxrpc.com')
-      const contract = new ethers.Contract(communityAddress, abi.abi, provider)
+      const rpcProvider = new ethers.providers.JsonRpcProvider('https://rpc.open-campus-codex.gelato.digital')
+      const contract = new ethers.Contract(communityAddress, abi.abi, rpcProvider)
 
       const submissionCount = await contract.getSubmissionCount(bountyId)
       const submissionPromises = Array.from({ length: submissionCount }, (_, i) => 
-        contract.getSubmission(bountyId, i).catch((error: Error) => {
-          console.error(`Error fetching submission ${i}:`, error)
-          return null
-        })
+        contract.getSubmission(bountyId, i).catch(() => null)
       )
 
       const submissionsData = (await Promise.all(submissionPromises))
@@ -225,7 +188,7 @@ export default function VerificationPanel({
       votedSubmissions.add(submissions[submissionIndex].id)
 
       fetchSubmissions()
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Error voting:", error)
       setTransactionStage("error")
       setTransactionError(error instanceof Error ? error.message : "Failed to vote. Please try again.")
@@ -284,7 +247,7 @@ export default function VerificationPanel({
       })
 
       fetchSubmissions()
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Error sending reward:", error)
       setTransactionStage("error")
       setTransactionError(error instanceof Error ? error.message : "Failed to send reward. Please try again.")
@@ -323,7 +286,7 @@ export default function VerificationPanel({
       setTransactionStage("confirmed")
 
       fetchSubmissions()
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Error completing bounty:", error)
       setTransactionStage("error")
       setTransactionError(error instanceof Error ? error.message : "Failed to complete bounty. Please try again.")
@@ -373,7 +336,7 @@ export default function VerificationPanel({
             }
             break
           }
-        } catch (err) {
+        } catch {
           continue
         }
       }
@@ -392,9 +355,9 @@ export default function VerificationPanel({
         submitter: metadata.submitter,
         timestamp: metadata.timestamp
       })
-    } catch (error: unknown) {
-      console.error("Error loading metadata:", error)
-      setTransactionError(error instanceof Error ? error.message : "Failed to load submission details. Please try again later.")
+    } catch {
+      console.error("Error loading metadata")
+      setTransactionError("Failed to load submission details. Please try again later.")
     }
   }
 
@@ -405,7 +368,6 @@ export default function VerificationPanel({
 
   const FileLink = ({ file }: { file: { name: string; cid: string; url: string } }) => {
     const [isLoading, setIsLoading] = useState(false)
-    const [error, setError] = useState<string | null>(null)
     const [showPreview, setShowPreview] = useState(false)
     const isImage = isImageFile(file)
 
@@ -418,13 +380,9 @@ export default function VerificationPanel({
       }
 
       setIsLoading(true)
-      setError(null)
 
       try {
         window.open(`https://moccasin-real-stork-472.mypinata.cloud/ipfs/${file.cid}`, "_blank")
-      } catch (err) {
-        console.error("Error opening file:", err)
-        setError("Failed to open file")
       } finally {
         setIsLoading(false)
       }
@@ -474,16 +432,6 @@ export default function VerificationPanel({
   const hasVoted = (submissionIndex: number) => {
     return votedSubmissions.has(submissions[submissionIndex].id)
   }
-
-  useEffect(() => {
-    console.log("Deadline check:", {
-      deadline,
-      currentTime: new Date().getTime(),
-      deadlineTime: new Date(deadline * 1000).getTime(),
-      isActive,
-      formattedDeadline: new Date(deadline * 1000).toLocaleString()
-    })
-  }, [deadline, isActive])
 
   const handleViewDetails = (index: number, submission: SubmissionData) => {
     setSelectedSubmission(submission)
@@ -593,7 +541,7 @@ export default function VerificationPanel({
               How to Verify Submissions
             </h3>
             <p className="text-sm text-muted-foreground">
-              Welcome to the verification process! First, review each submission's details and proof files. Use the Quality Check tool to analyze submission quality, then vote Approve or Reject based on your assessment. {isCreator ? "As the bounty creator, you can set rewards for approved submissions." : "The bounty creator will set rewards for approved submissions."} {isActive ? "Voting is currently active until the deadline." : "The voting period has ended."}
+              Welcome to the verification process! First, review each submission&apos;s details and proof files. Use the Quality Check tool to analyze submission quality, then vote Approve or Reject based on your assessment. {isCreator ? "As the bounty creator, you can set rewards for approved submissions." : "The bounty creator will set rewards for approved submissions."} {isActive ? "Voting is currently active until the deadline." : "The voting period has ended."}
             </p>
           </div>
 
@@ -736,7 +684,6 @@ export default function VerificationPanel({
                         onQualityCheck={(score, feedback) => {
                           console.log('Quality check completed:', { score, feedback })
                         }}
-                        isSubmitter={submission.submitter.toLowerCase() === address?.toLowerCase()}
                         bountyAmount={rewardAmount}
                         isApproved={submission.status === "approved"}
                         disabled={!isActive}
@@ -944,5 +891,3 @@ export default function VerificationPanel({
     </Card>
   )
 }
-
-

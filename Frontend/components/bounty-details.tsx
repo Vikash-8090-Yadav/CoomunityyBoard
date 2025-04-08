@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -36,7 +36,6 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
   const [showRewardForm, setShowRewardForm] = useState(false)
   const [rewardAmount, setRewardAmount] = useState("")
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<number | null>(null)
-  const [transactionHash, setTransactionHash] = useState<string | null>(null)
   const [transactionStage, setTransactionStage] = useState<"idle" | "submitted" | "pending" | "confirmed" | "error">("idle")
 
   // Load saved tab preference from localStorage
@@ -135,7 +134,6 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
       setTransactionStage("submitted")
       const tx = await setSubmissionReward(bounty.id, submissionId, rewardAmount)
       if (tx) {
-        setTransactionHash(tx.hash)
         setTransactionStage("pending")
         const receipt = await tx.wait()
         if (receipt.status === 1) {
@@ -164,7 +162,6 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
       setTransactionStage("submitted")
       const tx = await completeBounty(bounty.id)
       if (tx) {
-        setTransactionHash(tx.hash)
         setTransactionStage("pending")
         const receipt = await tx.wait()
         if (receipt.status === 1) {
@@ -205,19 +202,13 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
     )
   }
 
-  if (chainId !== 71) {
+  if (chainId !== 656476) {
     return (
-      <Card className="border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40">
-        <CardContent className="pt-6 flex flex-col items-center justify-center p-10 text-center">
-          <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
-          <h3 className="text-xl font-semibold mb-2 text-amber-700 dark:text-amber-400">Wrong Network</h3>
-          <p className="text-amber-600 dark:text-amber-300 mb-2 break-words max-w-md">Please switch to Conflux Testnet (Chain ID: 71)</p>
-          <p className="text-sm text-amber-500 dark:text-amber-400/70 break-words max-w-md">Current network: {chainId || "Unknown"}</p>
-          <Button variant="outline" className="mt-4" onClick={() => router.push("/")}>
-            Back to Bounties
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col items-center justify-center p-6 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+        <h3 className="text-xl font-semibold mb-2 text-amber-700 dark:text-amber-400">Wrong Network</h3>
+        <p className="text-sm text-amber-500 dark:text-amber-400/70 break-words max-w-md">Current network: {chainId || "Unknown"}</p>
+        <p className="text-sm text-amber-500 dark:text-amber-400/70">Please switch to edutestnet (Chain ID: 656476)</p>
+      </div>
     )
   }
 
@@ -278,11 +269,9 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
             <TransactionProgress 
               stage={transactionStage}
               errorMessage={error || undefined}
-              transactionHash={transactionHash}
               onClose={() => {
                 if (transactionStage === "confirmed" || transactionStage === "error") {
                   setTransactionStage("idle")
-                  setTransactionHash(null)
                   setError(null)
                 }
               }}
@@ -522,11 +511,18 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                                 <Button
                                   className="w-full"
                                   onClick={() => {
+                                    if (bounty?.deadline && bounty.deadline * 1000 > Date.now()) {
+                                      setError("Cannot set reward before deadline")
+                                      return
+                                    }
                                     setShowRewardForm(true)
                                     setSelectedSubmissionId(submission.id)
                                   }}
+                                  disabled={!!(bounty?.deadline && bounty.deadline * 1000 > Date.now())}
                                 >
-                                  Set Reward
+                                  {bounty?.deadline && bounty.deadline * 1000 > Date.now() 
+                                    ? "Set Reward (Available after deadline)" 
+                                    : "Set Reward"}
                                 </Button>
                               ) : (
                                 <div className="space-y-2">
@@ -609,7 +605,6 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
                     bountyCreator={bounty.creator} 
                     deadline={bounty.deadline}
                     rewardAmount={typeof bounty.rewardAmount === 'bigint' ? bounty.rewardAmount.toString() : bounty.rewardAmount}
-                    proofRequirements={bounty.proofRequirements}
                   />
                 </div>
               )}

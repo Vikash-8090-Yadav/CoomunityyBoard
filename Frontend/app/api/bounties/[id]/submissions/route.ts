@@ -3,7 +3,7 @@ import { ethers } from "ethers"
 import { communityAddress } from "@/config"
 import abi from "@/abi/CommunityBountyBoard.json"
 
-const CONFLUX_TESTNET_RPC = 'https://evmtestnet.confluxrpc.com'
+const EDU_TESTNET_RPC = 'https://rpc.open-campus-codex.gelato.digital'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     console.log('Fetching submissions for bounty:', bountyId)
 
-    const provider = new ethers.providers.JsonRpcProvider(CONFLUX_TESTNET_RPC)
+    const provider = new ethers.providers.JsonRpcProvider(EDU_TESTNET_RPC)
     const network = await provider.getNetwork()
     console.log('Connected to network:', network)
 

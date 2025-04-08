@@ -39,7 +39,7 @@ export default function CollapsibleSubmitProof({
       </CardHeader>
       {isOpen && (
         <CardContent>
-          <SubmitProofForm bountyId={bountyId} bountyTitle={bountyTitle} />
+          <SubmitProofForm bountyId={bountyId.toString()} bountyTitle={bountyTitle} />
         </CardContent>
       )}
     </Card>
