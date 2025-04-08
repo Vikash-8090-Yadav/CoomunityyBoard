@@ -71,7 +71,7 @@ export default function VerificationPanel({
   const [transactionError, setTransactionError] = useState<string | null>(null)
   const [selectedSubmission, setSelectedSubmission] = useState<SubmissionData | null>(null)
   const [metadata, setMetadata] = useState<IPFSMetadata | null>(null)
-  const [votedSubmissions] = useState<Set<string>>(new Set())
+  const [votedSubmissions, setVotedSubmissions] = useState<Set<string>>(new Set())
   const [rewardInputs, setRewardInputs] = useState<{ [key: string]: string }>({})
   const [isActive, setIsActive] = useState(() => {
     const currentTime = new Date().getTime()
@@ -166,8 +166,13 @@ export default function VerificationPanel({
       return
     }
 
-    if (votedSubmissions.has(submissions[submissionIndex].id)) {
+    if (hasVoted(submissionIndex)) {
       console.error("You have already voted on this submission")
+      return
+    }
+
+    if (!isActive) {
+      console.error("Voting period has ended")
       return
     }
 
@@ -185,9 +190,11 @@ export default function VerificationPanel({
       console.log("Vote transaction confirmed")
       setTransactionStage("confirmed")
 
-      votedSubmissions.add(submissions[submissionIndex].id)
+      // Update voted submissions state
+      setVotedSubmissions(prev => new Set([...prev, submissions[submissionIndex].id]))
 
-      fetchSubmissions()
+      // Reload the page after successful vote
+      window.location.reload()
     } catch (error) {
       console.error("Error voting:", error)
       setTransactionStage("error")
@@ -215,6 +222,16 @@ export default function VerificationPanel({
 
     if (!rewardAmount || isNaN(Number(rewardAmount)) || Number(rewardAmount) <= 0) {
       console.error("Please enter a valid reward amount")
+      return
+    }
+
+    if (submission.status !== "approved") {
+      console.error("Can only set reward for approved submissions")
+      return
+    }
+
+    if (isActive) {
+      console.error("Cannot set reward before deadline")
       return
     }
 
@@ -246,7 +263,8 @@ export default function VerificationPanel({
         return newInputs
       })
 
-      fetchSubmissions()
+      // Reload the page after successful reward set
+      window.location.reload()
     } catch (error) {
       console.error("Error sending reward:", error)
       setTransactionStage("error")
@@ -285,7 +303,8 @@ export default function VerificationPanel({
       console.log("Bounty completed successfully")
       setTransactionStage("confirmed")
 
-      fetchSubmissions()
+      // Reload the page after successful completion
+      window.location.reload()
     } catch (error) {
       console.error("Error completing bounty:", error)
       setTransactionStage("error")
@@ -654,7 +673,7 @@ export default function VerificationPanel({
                           size="sm"
                           className="flex-1 h-8"
                           onClick={() => handleVote(index, true)}
-                          disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
+                          disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index) || !isActive}
                         >
                           <Check className="h-3.5 w-3.5 mr-1.5 text-green-500" />
                           {hasVoted(index) ? "Voted" : "Approve"}
@@ -664,7 +683,7 @@ export default function VerificationPanel({
                           size="sm"
                           className="flex-1 h-8"
                           onClick={() => handleVote(index, false)}
-                          disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index)}
+                          disabled={voting || submission.submitter.toLowerCase() === address?.toLowerCase() || hasVoted(index) || !isActive}
                         >
                           <X className="h-3.5 w-3.5 mr-1.5 text-red-500" />
                           {hasVoted(index) ? "Voted" : "Reject"}
@@ -708,12 +727,12 @@ export default function VerificationPanel({
                             className="flex-1 px-3 py-2 border rounded-md text-sm"
                             min="0"
                             step="0.000000000000000001"
-                            disabled={settingReward}
+                            disabled={settingReward || isActive}
                           />
                           <Button
                             size="sm"
                             onClick={() => handleSetReward(index)}
-                            disabled={settingReward || !rewardInputs[submission.id] || Number(rewardInputs[submission.id]) <= 0}
+                            disabled={settingReward || !rewardInputs[submission.id] || Number(rewardInputs[submission.id]) <= 0 || isActive}
                           >
                             {settingReward ? (
                               <>
@@ -727,6 +746,9 @@ export default function VerificationPanel({
                         </div>
                         {rewardInputs[submission.id] && Number(rewardInputs[submission.id]) <= 0 && (
                           <p className="text-xs text-red-500 mt-1">Please enter a reward amount greater than 0</p>
+                        )}
+                        {isActive && (
+                          <p className="text-xs text-yellow-600 mt-1">You can set rewards after the deadline has passed</p>
                         )}
                       </div>
                     )}
