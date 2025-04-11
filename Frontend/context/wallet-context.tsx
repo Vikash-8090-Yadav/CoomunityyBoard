@@ -30,16 +30,16 @@ const WalletContext = createContext<WalletContextType>({
 });
 
 const networks = {
-  edutestnet: {
-    chainId: `0x${Number(656476).toString(16)}`,
-    chainName: "edutestnet",
+  baseSepolia: {
+    chainId: `0x${Number(84532).toString(16)}`,
+    chainName: "Base Sepolia",
     nativeCurrency: {
       name: "ETH",
       symbol: "ETH",
       decimals: 18,
     },
-    rpcUrls: ["https://rpc.open-campus-codex.gelato.digital"],
-    blockExplorerUrls: ['https://opencampus-codex.blockscout.com'],
+    rpcUrls: ["https://sepolia.base.org"],
+    blockExplorerUrls: ['https://sepolia-explorer.base.org'],
   },
 };
 
@@ -73,6 +73,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setAddress(userAddress);
             setConnected(true);
             setChainId(network.chainId);
+            setIsCorrectNetwork(network.chainId === 84532);
           }
         } catch (error) {
           console.error("Failed to check wallet connection:", error);
@@ -138,7 +139,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           setAddress(userAddress);
           setConnected(true);
           setChainId(network.chainId);
-          setIsCorrectNetwork(network.chainId === 656476);
+          setIsCorrectNetwork(network.chainId === 84532);
 
           if (typeof window !== 'undefined') {
             localStorage.setItem("walletAddress", userAddress);

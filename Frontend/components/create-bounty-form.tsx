@@ -97,13 +97,36 @@ export default function CreateBountyForm() {
         deadline
       ])
 
-      // Create transaction object
+      // Get user's balance
+      const balance = await provider.getBalance(await signer.getAddress())
+      
+      // Estimate gas
+      const gasEstimate = await provider.estimateGas({
+        from: await signer.getAddress(),
+        to: communityAddress,
+        data: encodedData,
+        value: rewardInWei
+      })
+
+      // Get gas price
+      const gasPrice = await provider.getGasPrice()
+      
+      // Calculate total cost (reward + gas)
+      const totalCost = rewardInWei.add(gasEstimate.mul(gasPrice))
+      
+      // Check if user has enough funds
+      if (balance.lt(totalCost)) {
+        throw new Error(`Insufficient funds. You need ${ethers.utils.formatEther(totalCost)} ETH but have ${ethers.utils.formatEther(balance)} ETH. Please get some Base Sepolia ETH from the faucet.`)
+      }
+
+      // Create transaction object with gas estimate
       const tx = {
         from: await signer.getAddress(),
         to: communityAddress,
         data: encodedData,
         value: rewardInWei,
-        nonce: nonce
+        nonce: nonce,
+        gasLimit: gasEstimate.mul(120).div(100) // Add 20% buffer to gas estimate
       }
 
       // Send transaction
@@ -131,12 +154,14 @@ export default function CreateBountyForm() {
         if (err.message.includes("4001")) {
           setTransactionError("Transaction was rejected in your wallet")
         } else if (err.message.includes("insufficient funds")) {
-          setTransactionError("You don't have enough ETH to create this bounty")
+          setTransactionError("You don't have enough ETH. Please get some Base Sepolia ETH from the faucet: https://sepoliafaucet.com/base")
         } else {
           setTransactionError(err.message || "Failed to create bounty. Please try again.")
         }
       } else {
-        setTransactionError("Failed to create bounty. Please try again.")
+        const errorObj = err as { code?: number; message?: string; data?: { message?: string } }
+        const errorMessage = errorObj.data?.message || errorObj.message || "Failed to create bounty. Please try again."
+        setTransactionError(errorMessage)
       }
     } finally {
       setLoading(false)

@@ -202,12 +202,12 @@ export default function BountyDetails({ id }: BountyDetailsProps) {
     )
   }
 
-  if (chainId !== 656476) {
+  if (chainId !== 84532) {
     return (
       <div className="flex flex-col items-center justify-center p-6 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
         <h3 className="text-xl font-semibold mb-2 text-amber-700 dark:text-amber-400">Wrong Network</h3>
         <p className="text-sm text-amber-500 dark:text-amber-400/70 break-words max-w-md">Current network: {chainId || "Unknown"}</p>
-        <p className="text-sm text-amber-500 dark:text-amber-400/70">Please switch to edutestnet (Chain ID: 656476)</p>
+        <p className="text-sm text-amber-500 dark:text-amber-400/70">Please switch to Base Sepolia (Chain ID: 84532)</p>
       </div>
     )
   }

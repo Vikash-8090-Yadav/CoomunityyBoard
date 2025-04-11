@@ -21,16 +21,16 @@ interface EthereumError extends Error {
 }
 
 const networks: Record<string, NetworkConfig> = {
-  edutestnet: {
-    chainId: `0x${Number(656476).toString(16)}`,
-    chainName: "edutestnet",
+  baseSepolia: {
+    chainId: `0x${Number(84532).toString(16)}`,
+    chainName: "Base Sepolia",
     nativeCurrency: {
       name: "ETH",
       symbol: "ETH",
       decimals: 18,
     },
-    rpcUrls: ["https://rpc.open-campus-codex.gelato.digital"],
-    blockExplorerUrls: ['https://opencampus-codex.blockscout.com'],
+    rpcUrls: ["https://sepolia.base.org"],
+    blockExplorerUrls: ['https://sepolia-explorer.base.org'],
   },
 };
 
@@ -49,10 +49,13 @@ export default function NetworkSwitchButton() {
           const currentChainId = `0x${network.chainId.toString(16)}`;
           
           console.log("Current chain ID:", currentChainId);
-          console.log("Target chain ID:", networks.edutestnet.chainId);
+          console.log("Target chain ID:", networks.baseSepolia.chainId);
           
-          if (currentChainId === networks.edutestnet.chainId) {
-            console.log("On correct network, hiding button");
+          // Convert current chain ID to decimal for comparison
+          const currentChainIdDecimal = parseInt(currentChainId, 16);
+          
+          if (currentChainIdDecimal === 84532) { // Base Sepolia Chain ID
+            console.log("On correct network (Base Sepolia), hiding button");
             setIsCorrectNetwork(true);
             setShowButton(false);
           } else {
@@ -97,8 +100,9 @@ export default function NetworkSwitchButton() {
       console.log("Current chain ID:", currentChainId);
 
       // If already on the correct network, return
-      if (currentChainId === networks.edutestnet.chainId) {
-        console.log("Already on the correct network");
+      const currentChainIdDecimal = parseInt(currentChainId, 16);
+      if (currentChainIdDecimal === 84532) { // Base Sepolia Chain ID
+        console.log("Already on Base Sepolia");
         setIsCorrectNetwork(true);
         setShowButton(false);
         return;
@@ -108,7 +112,7 @@ export default function NetworkSwitchButton() {
         // Try to switch to the network
         await window.ethereum.request({
           method: 'wallet_switchEthereumChain',
-          params: [{ chainId: networks.edutestnet.chainId }],
+          params: [{ chainId: networks.baseSepolia.chainId }],
         });
         console.log("Successfully switched networks");
         setIsCorrectNetwork(true);
@@ -120,24 +124,24 @@ export default function NetworkSwitchButton() {
             // Add the network
             await window.ethereum.request({
               method: 'wallet_addEthereumChain',
-              params: [networks.edutestnet],
+              params: [networks.baseSepolia],
             });
             console.log("Network added successfully");
             
             // Try switching again after adding
             await window.ethereum.request({
               method: 'wallet_switchEthereumChain',
-              params: [{ chainId: networks.edutestnet.chainId }],
+              params: [{ chainId: networks.baseSepolia.chainId }],
             });
             console.log("Successfully switched after adding network");
             setIsCorrectNetwork(true);
             setShowButton(false);
           } catch (addError) {
             console.error("Add network error:", addError);
-            throw new Error('Failed to add edutestnet to your wallet');
+            throw new Error('Failed to add Base Sepolia to your wallet');
           }
         } else {
-          throw new Error('Failed to switch to edutestnet network');
+          throw new Error('Failed to switch to Base Sepolia network');
         }
       }
     } catch (error) {
@@ -163,7 +167,7 @@ export default function NetworkSwitchButton() {
             loading ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
-          {loading ? 'Switching...' : 'Switch to edutestnet'}
+          {loading ? 'Switching...' : 'Switch to Base Sepolia'}
         </button>
       </div>
     </div>

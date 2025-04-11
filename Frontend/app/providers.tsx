@@ -1,14 +1,14 @@
 'use client'
 
 import { WagmiProvider, createConfig, http } from 'wagmi'
-import { confluxESpaceTestnet } from 'wagmi/chains'
+import { baseSepolia } from 'wagmi/chains'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BountyProvider } from '@/context/bounty-context'
 
 const config = createConfig({
-  chains: [confluxESpaceTestnet],
+  chains: [baseSepolia],
   transports: {
-    [confluxESpaceTestnet.id]: http(),
+    [baseSepolia.id]: http(),
   },
 })
 

@@ -99,48 +99,89 @@ export default function VerificationPanel({
   const fetchSubmissions = useCallback(async () => {
     try {
       setLoading(true)
-      const rpcProvider = new ethers.providers.JsonRpcProvider('https://rpc.open-campus-codex.gelato.digital')
+      console.log('Connecting to Base Sepolia...');
+      const rpcProvider = new ethers.providers.JsonRpcProvider('https://sepolia.base.org')
+      
+      console.log('Creating contract instance with address:', communityAddress);
       const contract = new ethers.Contract(communityAddress, abi.abi, rpcProvider)
 
-      const submissionCount = await contract.getSubmissionCount(bountyId)
-      const submissionPromises = Array.from({ length: submissionCount }, (_, i) => 
-        contract.getSubmission(bountyId, i).catch(() => null)
-      )
+      // First, let's verify the contract exists
+      try {
+        const code = await rpcProvider.getCode(communityAddress);
+        console.log('Contract code length:', code.length);
+        if (code === '0x') {
+          throw new Error('Contract does not exist at this address on Base Sepolia');
+        }
+      } catch (err) {
+        console.error('Error checking contract existence:', err);
+        throw new Error('Failed to verify contract on Base Sepolia');
+      }
 
-      const submissionsData = (await Promise.all(submissionPromises))
-        .filter((data): data is ethers.utils.Result => data !== null)
-        .map((data, i) => {
-          const [
-            submitter,
-            ipfsProofHash,
-            timestamp,
-            approved,
-            approvalCount,
-            rejectCount,
-            isWinner,
-            rewardAmount,
-            txHash,
-            payoutTxHash
-          ] = data
+      console.log('Fetching submission count for bounty:', bountyId);
+      try {
+        const submissionCount = await contract.getSubmissionCount(bountyId)
+        console.log('Submission count:', submissionCount.toString());
+        
+        if (submissionCount.eq(0)) {
+          console.log('No submissions found for this bounty');
+          setSubmissions([]);
+          return;
+        }
 
-          return {
-            id: i.toString(),
-            submitter,
-            proofCID: ipfsProofHash,
-            status: approved ? "approved" : rejectCount > 0 ? "rejected" : "pending" as "approved" | "pending" | "rejected",
-            rewardAmount: rewardAmount.toString(),
-            timestamp: Number(timestamp),
-            approvalCount: Number(approvalCount),
-            rejectCount: Number(rejectCount),
-            isWinner,
-            txHash,
-            payoutTxHash
-          }
-        })
+        const submissionPromises = Array.from({ length: submissionCount.toNumber() }, (_, i) => 
+          contract.getSubmission(bountyId, i).catch((err: Error) => {
+            console.error(`Error fetching submission ${i}:`, err);
+            return null;
+          })
+        )
 
-      setSubmissions(submissionsData)
+        const submissionsData = (await Promise.all(submissionPromises))
+          .filter((data): data is ethers.utils.Result => data !== null)
+          .map((data, i) => {
+            const [
+              submitter,
+              ipfsProofHash,
+              timestamp,
+              approved,
+              approvalCount,
+              rejectCount,
+              isWinner,
+              rewardAmount,
+              txHash,
+              payoutTxHash
+            ] = data
+
+            return {
+              id: i.toString(),
+              submitter,
+              proofCID: ipfsProofHash,
+              status: approved ? "approved" : rejectCount > 0 ? "rejected" : "pending" as "approved" | "pending" | "rejected",
+              rewardAmount: rewardAmount.toString(),
+              timestamp: Number(timestamp),
+              approvalCount: Number(approvalCount),
+              rejectCount: Number(rejectCount),
+              isWinner,
+              txHash,
+              payoutTxHash
+            }
+          })
+
+        console.log('Fetched submissions:', submissionsData);
+        setSubmissions(submissionsData)
+      } catch (err) {
+        console.error('Error fetching submissions:', err);
+        if (err instanceof Error) {
+          console.error('Error details:', {
+            message: err.message,
+            stack: err.stack,
+            name: err.name
+          });
+        }
+        throw new Error('Failed to fetch submissions from contract');
+      }
     } catch (err) {
-      console.error("Error fetching submissions:", err)
+      console.error("Error in fetchSubmissions:", err);
+      setTransactionError(err instanceof Error ? err.message : "Failed to fetch submissions. Please check if you're connected to Base Sepolia network.");
     } finally {
       setLoading(false)
     }
