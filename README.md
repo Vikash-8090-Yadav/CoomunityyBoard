@@ -39,10 +39,16 @@ graph TD
 
 # Smart Contract: 
 
-https://edu-chain-testnet.blockscout.com/address/0x2C8e10de89319BEdD4535fe668B659e6e1dF5593
+https://base-sepolia.blockscout.com/address/0x87dC337C1d66ba26a292caF908562C40fC89b203
 
 
-<img width="927" alt="image" src="https://github.com/user-attachments/assets/33749aeb-c8ba-49c4-be7d-0dd91b794f40" />
+<img width="1029" alt="Screenshot 2025-04-12 004745" src="https://github.com/user-attachments/assets/6c367ded-7c3d-4eeb-a298-a0831232143a" />
+
+
+
+# Demo video: https://youtu.be/n4mRyRXq-R4
+
+# Live Link: https://coomunityy-board.vercel.app/
 
 
 ### Screenshots
