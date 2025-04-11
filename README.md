@@ -140,8 +140,8 @@ CommunityBoard/
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/Vikash-8090-Yadav/CommunityBoard.git
-cd CommunityBoard
+git clone https://github.com/Vikash-8090-Yadav/CoomunityyBoard.git
+cd CoomunityyBoard
 ```
 
 2. Install dependencies:
