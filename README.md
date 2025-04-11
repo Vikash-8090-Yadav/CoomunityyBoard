@@ -50,6 +50,10 @@ https://base-sepolia.blockscout.com/address/0x87dC337C1d66ba26a292caF908562C40fC
 
 # Live Link: https://coomunityy-board.vercel.app/
 
+# Tweet 
+
+https://x.com/CommuntyBoardAI/status/1910776923246256418
+
 
 ### Screenshots
 
